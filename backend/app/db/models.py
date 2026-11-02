@@ -114,3 +114,51 @@ class CommonAnswer(Base):
     answer: Mapped[str] = mapped_column(Text)
 
     profile: Mapped["Profile"] = relationship(back_populates="common_answers")
+
+
+class Company(Base):
+    __tablename__ = "companies"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(300), unique=True, index=True)
+    website: Mapped[str] = mapped_column(String(500), default="")
+    locations_json: Mapped[str] = mapped_column(Text, default="[]")
+    remote: Mapped[bool] = mapped_column(Boolean, default=False)
+    region: Mapped[str] = mapped_column(String(10), default="other")  # us | eu | other
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # ATS discovery (Phase 2)
+    ats: Mapped[str] = mapped_column(String(30), default="unknown")
+    careers_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    jobs_endpoint: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    ats_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    discovered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Job(Base):
+    __tablename__ = "jobs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str] = mapped_column(String(400), index=True)
+    company: Mapped[str] = mapped_column(String(300), default="")
+    company_website: Mapped[str] = mapped_column(String(500), default="")
+    location: Mapped[str] = mapped_column(String(400), default="")
+    countries_json: Mapped[str] = mapped_column(Text, default="[]")
+    remote: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    visa_sponsorship: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    commitment_json: Mapped[str] = mapped_column(Text, default="[]")
+    yoe: Mapped[float | None] = mapped_column(nullable=True)
+    salary_min: Mapped[int | None] = mapped_column(nullable=True)
+    salary_max: Mapped[int | None] = mapped_column(nullable=True)
+    salary_currency: Mapped[str] = mapped_column(String(10), default="USD")
+    apply_url: Mapped[str] = mapped_column(String(1000), default="")
+    source: Mapped[str] = mapped_column(String(60), default="")  # hiringcafe|greenhouse|lever|...
+    hiringcafe_id: Mapped[str] = mapped_column(String(120), default="")
+    indexed_at: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    # Filtering result at ingest time (informational; re-evaluable anytime)
+    passes_filters: Mapped[bool] = mapped_column(Boolean, default=True)
+    filter_reasons_json: Mapped[str] = mapped_column(Text, default="[]")
+    # Deduplication key: sha1(source|apply_url|company+title)
+    unique_key: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
