@@ -144,4 +144,6 @@ def job_detail_page(request: Request, job_id: int, db: Session = Depends(get_db)
         from fastapi.responses import HTMLResponse as _HTML
 
         return _HTML("<h1>Job not found</h1>", status_code=404)
-    return _render(request, "job_detail.html", **_ctx("jobs", job=job))
+    from .api.tailor import tailored_view
+
+    return _render(request, "job_detail.html", **_ctx("jobs", job=job, tailored=tailored_view(db, job)))

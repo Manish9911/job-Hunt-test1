@@ -43,5 +43,59 @@
   <p class="muted">No direct application URL captured for this listing.</p>
   {% endif %}
 </div>
+<div class="card">
+  <h2>Resume tailoring</h2>
+  {% if tailored.status == 'tailored' %}
+  <p>
+    Master resume (before): <span class="badge">{{ tailored.match_score_before if tailored.match_score_before is not none else '?' }}/100</span>
+    &nbsp;&nbsp; Tailored (after): <span class="badge">{{ tailored.match_score_after if tailored.match_score_after is not none else '?' }}/100</span>
+    {% if tailored.lift is not none %}<span class="muted">lift {{ tailored.lift }} pts</span>{% endif %}
+    <span class="muted">· method: {{ (tailored.notes or {}).get('method', '?') }}</span>
+  </p>
+  <div style="display:flex;gap:12px;flex-wrap:wrap;margin:10px 0">
+    <a href="{{ tailored.exports.docx }}" style="display:inline-block;background:var(--accent);color:#fff;padding:8px 16px;border-radius:8px;text-decoration:none">Download tailored DOCX</a>
+    <a href="{{ tailored.exports.pdf }}" style="display:inline-block;background:var(--accent);color:#fff;padding:8px 16px;border-radius:8px;text-decoration:none">Download tailored PDF</a>
+    <button class="secondary" hx-post="/api/jobs/{{ job.id }}/tailor" hx-swap="none"
+            hx-vals='{"jd_text": null, "cover_letter": false}'
+            hx-on::after-request="if(event.detail.successfullySwapped) location.reload()">Re-tailor</button>
+  </div>
+  {% if tailored.cover_letter %}
+  <details>
+    <summary>Cover letter</summary>
+    <pre style="white-space:pre-wrap;font-family:inherit;background:var(--card);padding:12px;border-radius:8px">{{ tailored.cover_letter }}</pre>
+  </details>
+  {% endif %}
+  <details>
+    <summary>Diff vs master resume</summary>
+    <pre style="background:var(--card);padding:12px;border-radius:8px;overflow-x:auto">{{ tailored.diff or '(no differences)' }}</pre>
+  </details>
+  {% if (tailored.notes or {}).get('fallback_reason') or (tailored.notes or {}).get('rejected_violations') %}
+  <p class="muted">⚠ LLM output was rejected for breaking the truth contract
+    ({{ (tailored.notes.get('rejected_violations') or ['n/a']) | join('; ') | truncate(120) }})
+    — deterministic reorder-only fallback was used.{{ '' if not (tailored.notes or {}).get('fallback_reason') else ' ' }}
+    {{ (tailored.notes or {}).get('fallback_reason', '') }}</p>
+  {% endif %}
+  {% else %}
+  <p class="muted">
+    Tailor your master resume for this job. Truth contract: only reorder/reword/emphasize —
+    employers, dates, degrees and skills are never invented; every LLM output is machine-validated
+    against your master resume (rejection → one retry → deterministic reorder fallback).
+    {% if not tailored.llm_available %}<br><strong>LLM not configured</strong> — add <code>OPENAI_API_KEY</code> to <code>.env</code>
+    for LLM tailoring; without it, a deterministic reorder-only mode is used (scores = JD skill coverage).
+    {% endif %}
+  </p>
+  <form hx-post="/api/jobs/{{ job.id }}/tailor" hx-swap="none"
+        hx-on::after-request="if(event.detail.successfullySwapped) location.reload()"
+        hx-disabled-elt="button[type=submit]" style="margin-top:10px">
+    <textarea name="jd_text" rows="5" style="width:100%"
+              placeholder="Optional: paste the full job description here. Leave empty to fetch it from the job page automatically."></textarea>
+    <p>
+      <label><input type="checkbox" name="cover_letter" value="true"> Also write a cover letter (LLM only)</label>
+      &nbsp;&nbsp; <button type="submit">Tailor resume for this job</button>
+    </p>
+    <p class="muted">Takes ~15-60 seconds with the LLM. You get before/after scores, a diff, and DOCX/PDF downloads.</p>
+  </form>
+  {% endif %}
+</div>
 <p><a href="/jobs" style="color:var(--accent)">← back to all jobs</a></p>
 {% endblock %}
