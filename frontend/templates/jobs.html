@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Jobs <span class="muted">— {{ passing }} passing your filters / {{ total }} total</span></h1>
+<div class="card">
+  <h2>Ingestion controls</h2>
+  <div style="display:flex;gap:12px;flex-wrap:wrap">
+    <button hx-post="/api/ingest/jobs/hiring-cafe" hx-swap="none"
+            hx-on::after-request="if(event.detail.successfullySwapped) location.reload()">
+      Pull from hiring.cafe (US latest + visa-sponsorship + remote)</button>
+    <button class="secondary" hx-post="/api/ingest/jobs/refilter" hx-swap="none"
+            hx-on::after-request="if(event.detail.successfullySwapped) location.reload()">
+      Re-run filters on stored jobs</button>
+  </div>
+  <details style="margin-top:12px">
+    <summary>Manual fallback — paste hiring.cafe page HTML (if the site blocks automated requests)</summary>
+    <form hx-post="/api/ingest/jobs/hiring-cafe/manual" hx-swap="none"
+          hx-on::after-request="if(event.detail.successfullySwapped) location.reload()" style="margin-top:10px">
+      <textarea name="html" rows="6" placeholder="View page source in your browser, copy everything, paste here" style="width:100%"></textarea>
+      <p><button type="submit">Parse pasted page</button></p>
+    </form>
+    <p class="muted">Save the hiring.cafe page in your browser (Ctrl+S), open the saved HTML in a text editor, copy it all, and paste above. Same parser, no bot checks involved.</p>
+  </details>
+</div>
+<div class="card">
+  <table>
+    <tr><th>Title</th><th>Company</th><th>Location</th><th>Remote</th><th>Visa</th><th>Source</th><th>Match</th></tr>
+    {% for j in jobs %}
+    <tr>
+      <td><a href="/jobs/{{ j.id }}" style="color:var(--accent)">{{ j.title }}</a></td>
+      <td>{{ j.company }}</td>
+      <td class="muted">{{ j.location }}</td>
+      <td>{% if j.remote %}✓{% elif j.remote is false %}<span class="muted">no</span>{% else %}<span class="muted">?</span>{% endif %}</td>
+      <td>{% if j.visa_sponsorship %}<span class="badge">sponsors</span>{% elif j.visa_sponsorship is false %}<span class="muted">no</span>{% else %}<span class="muted">?</span>{% endif %}</td>
+      <td class="muted">{{ j.source }}</td>
+      <td>{% if j.passes_filters %}<span class="badge">match</span>{% else %}<span class="muted">no — {{ (j.filter_reasons_json | from_json_list) | join('; ') | truncate(40) }}</span>{% endif %}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7" class="muted">No jobs yet — run the ingestion button above.</td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}

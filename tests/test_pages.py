@@ -5,7 +5,8 @@ def test_health(client):
 
 
 def test_all_pages_render(client):
-    for path in ("/", "/profile", "/resumes", "/skills", "/experience", "/education", "/answers"):
+    for path in ("/", "/profile", "/resumes", "/skills", "/experience", "/education", "/answers",
+                 "/companies", "/jobs"):
         r = client.get(path)
         assert r.status_code == 200, path
         assert "jobflow" in r.text

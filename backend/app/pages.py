@@ -3,7 +3,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from .db.deps import get_db, get_profile
-from .db.models import CommonAnswer, Education, Profile, Resume, Skill, WorkHistory
+from .db.models import CommonAnswer, Company, Education, Job, Profile, Resume, Skill, WorkHistory
 
 router = APIRouter(tags=["pages"])
 
@@ -99,3 +99,43 @@ def answers_page(request: Request, profile: Profile = Depends(get_profile), db: 
         .all()
     )
     return _render(request, "answers.html", **_ctx("answers", answers=items))
+
+
+@router.get("/companies", response_class=HTMLResponse)
+def companies_page(request: Request, db: Session = Depends(get_db)):
+    companies = db.query(Company).order_by(Company.name).all()
+    by_region: dict[str, int] = {}
+    by_ats: dict[str, int] = {}
+    for c in companies:
+        by_region[c.region] = by_region.get(c.region, 0) + 1
+        by_ats[c.ats] = by_ats.get(c.ats, 0) + 1
+    return _render(
+        request, "companies.html",
+        **_ctx("companies", companies=companies, by_region=by_region, by_ats=by_ats),
+    )
+
+
+@router.get("/jobs", response_class=HTMLResponse)
+def jobs_page(request: Request, db: Session = Depends(get_db)):
+    total = db.query(Job).count()
+    passing = db.query(Job).filter(Job.passes_filters.is_(True)).count()
+    jobs = (
+        db.query(Job)
+        .order_by(Job.fetched_at.desc(), Job.id.desc())
+        .limit(200)
+        .all()
+    )
+    return _render(
+        request, "jobs.html",
+        **_ctx("jobs", jobs=jobs, total=total, passing=passing),
+    )
+
+
+@router.get("/jobs/{job_id}", response_class=HTMLResponse)
+def job_detail_page(request: Request, job_id: int, db: Session = Depends(get_db)):
+    job = db.get(Job, job_id)
+    if job is None:
+        from fastapi.responses import HTMLResponse as _HTML
+
+        return _HTML("<h1>Job not found</h1>", status_code=404)
+    return _render(request, "job_detail.html", **_ctx("jobs", job=job))
