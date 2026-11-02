@@ -10,7 +10,7 @@ from . import pages
 from .api import common_answers, education, jobs, profile, resumes, skills, work_history
 from .config import Settings
 from .db import models  # noqa: F401  (register models on Base)
-from .db.base import Base, make_engine, make_session
+from .db.base import Base, ensure_columns, make_engine, make_session
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -24,6 +24,7 @@ def create_app(database_url: str | None = None) -> FastAPI:
 
     engine = make_engine(db_url)
     Base.metadata.create_all(engine)
+    ensure_columns(engine)
 
     app = FastAPI(title="jobflow", version="0.1.0")
     app.state.engine = engine
@@ -32,6 +33,7 @@ def create_app(database_url: str | None = None) -> FastAPI:
 
     templates = Jinja2Templates(directory=str(ROOT / "frontend" / "templates"))
     templates.env.filters["from_json_list"] = lambda s: json.loads(s) if s else []
+    templates.env.filters["from_json"] = lambda s: json.loads(s) if s else {}
     app.state.templates = templates
 
     app.mount("/static", StaticFiles(directory=str(ROOT / "frontend" / "static")), name="static")

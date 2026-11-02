@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 import httpx
 from sqlalchemy.orm import Session
 
-from ..db.models import Company, Job
+from ..db.models import Company, Job, Skill
 from .ats import detect_company_ats, registrable_domain
 from .ats_jobs import fetch_jobs_for_endpoint
 from .filters import job_passes_filters
@@ -21,6 +21,20 @@ from .hiring_cafe import (
     parse_hiring_cafe_html,
 )
 from .hwow import domain_of, fetch_hwow_readme, parse_hwow_readme
+from .match import score_job
+
+
+def load_resume_skills(db: Session) -> list[str]:
+    """All profile skills — the master resume's skill inventory."""
+    return [r[0] for r in db.query(Skill.name).all()]
+
+
+def _score_row(row: Job, job_dict: dict, resume_skills: list[str]) -> None:
+    if not resume_skills:
+        return
+    score, breakdown = score_job(job_dict, resume_skills)
+    row.match_score = score
+    row.match_breakdown_json = json.dumps(breakdown)
 
 
 def job_unique_key(job: dict) -> str:
@@ -49,6 +63,7 @@ def upsert_companies(db: Session, raw_companies: list[dict]) -> dict:
 
 def store_jobs(db: Session, jobs: list[dict]) -> dict:
     added = skipped = passing = 0
+    resume_skills = load_resume_skills(db)
     for j in jobs:
         key = job_unique_key(j)
         if db.query(Job).filter(Job.unique_key == key).first() is not None:
@@ -76,6 +91,7 @@ def store_jobs(db: Session, jobs: list[dict]) -> dict:
             filter_reasons_json=json.dumps(reasons),
             unique_key=key,
         )
+        _score_row(row, j, resume_skills)
         db.add(row)
         added += 1
         if keep:
@@ -166,6 +182,32 @@ def refilter_jobs(db: Session) -> dict:
             passing += 1
     db.commit()
     return {"rechecked": len(rows), "passing": passing}
+
+
+def score_all_jobs(db: Session) -> dict:
+    """(Re)score every stored job against the master resume (0-100)."""
+    resume_skills = load_resume_skills(db)
+    if not resume_skills:
+        return {"scored": 0, "skipped": "no profile skills — seed the profile first"}
+    rows = db.query(Job).all()
+    avg = 0
+    for row in rows:
+        job_dict = {
+            "title": row.title,
+            "company": row.company,
+            "location": row.location,
+            "countries": json.loads(row.countries_json) if row.countries_json else [],
+            "commitment": json.loads(row.commitment_json) if row.commitment_json else [],
+            "remote": row.remote,
+            "visa_sponsorship": row.visa_sponsorship,
+            "yoe": row.yoe,
+        }
+        _score_row(row, job_dict, resume_skills)
+        if row.match_score is not None:
+            avg += row.match_score
+    db.commit()
+    scored = sum(1 for r in rows if r.match_score is not None)
+    return {"scored": scored, "average": round(avg / scored) if scored else 0}
 
 
 def ingest_company_feed_jobs(db: Session, limit: int = 25, delay: float = 1.5) -> dict:

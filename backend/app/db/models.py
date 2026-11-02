@@ -159,6 +159,11 @@ class Job(Base):
     # Filtering result at ingest time (informational; re-evaluable anytime)
     passes_filters: Mapped[bool] = mapped_column(Boolean, default=True)
     filter_reasons_json: Mapped[str] = mapped_column(Text, default="[]")
+    # Resume-vs-JD match, 0-100. Master resume = "before tailoring";
+    # tailored resume = "after tailoring" (filled by Phase 3).
+    match_score: Mapped[int | None] = mapped_column(nullable=True)
+    match_score_tailored: Mapped[int | None] = mapped_column(nullable=True)
+    match_breakdown_json: Mapped[str] = mapped_column(Text, default="{}")
     # Deduplication key: sha1(source|apply_url|company+title)
     unique_key: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

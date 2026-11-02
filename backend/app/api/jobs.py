@@ -40,6 +40,13 @@ def _job_dict(j: Job) -> dict:
         reasons = json.loads(j.filter_reasons_json) if j.filter_reasons_json else []
     except json.JSONDecodeError:
         reasons = []
+    try:
+        breakdown = json.loads(j.match_breakdown_json) if j.match_breakdown_json else {}
+    except json.JSONDecodeError:
+        breakdown = {}
+    lift = None
+    if j.match_score is not None and j.match_score_tailored is not None:
+        lift = j.match_score_tailored - j.match_score
     return {
         "id": j.id,
         "title": j.title,
@@ -57,6 +64,10 @@ def _job_dict(j: Job) -> dict:
         "source": j.source,
         "passes_filters": j.passes_filters,
         "filter_reasons": reasons,
+        "match_score": j.match_score,
+        "match_score_tailored": j.match_score_tailored,
+        "match_lift": lift,
+        "match_breakdown": breakdown,
         "fetched_at": j.fetched_at.isoformat() if j.fetched_at else None,
     }
 
@@ -101,6 +112,11 @@ def run_ingest_company_feeds(limit: int = Query(25, ge=1, le=100), db: Session =
 @router.post("/jobs/refilter")
 def run_refilter_jobs(db: Session = Depends(get_db)):
     return service.refilter_jobs(db)
+
+
+@router.post("/jobs/score")
+def run_score_jobs(db: Session = Depends(get_db)):
+    return service.score_all_jobs(db)
 
 
 # ---------- read companies ----------
