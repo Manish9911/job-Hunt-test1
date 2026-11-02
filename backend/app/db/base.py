@@ -23,6 +23,9 @@ _EXTRA_COLUMNS = (
     ("jobs", "match_score", "INTEGER"),
     ("jobs", "match_score_tailored", "INTEGER"),
     ("jobs", "match_breakdown_json", "TEXT DEFAULT '{}'"),
+    ("jobs", "tailored_resume_id", "INTEGER"),
+    ("jobs", "tailor_notes_json", "TEXT DEFAULT '{}'"),
+    ("jobs", "cover_letter_text", "TEXT DEFAULT ''"),
 )
 
 

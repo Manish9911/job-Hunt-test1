@@ -164,6 +164,10 @@ class Job(Base):
     match_score: Mapped[int | None] = mapped_column(nullable=True)
     match_score_tailored: Mapped[int | None] = mapped_column(nullable=True)
     match_breakdown_json: Mapped[str] = mapped_column(Text, default="{}")
+    # Phase 3 tailoring artifacts
+    tailored_resume_id: Mapped[int | None] = mapped_column(nullable=True)
+    tailor_notes_json: Mapped[str] = mapped_column(Text, default="{}")
+    cover_letter_text: Mapped[str] = mapped_column(Text, default="")
     # Deduplication key: sha1(source|apply_url|company+title)
     unique_key: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
