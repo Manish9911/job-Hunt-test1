@@ -202,6 +202,109 @@ def fill_consent(page, ctx: ApplicationContext, log: LogFn) -> list[str]:
     return filled
 
 
+# ---------------------------------------------------------------------------
+# Screening questions: match stored (question, answer) pairs to form fields
+# ---------------------------------------------------------------------------
+
+
+def _norm(s: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9 ]", " ", (s or "").lower())).strip()
+
+
+def _question_text_for(el) -> str:
+    """Collect candidate question text around a field: labels, legends, and the
+    nearest preceding text blocks (Greenhouse puts questions in <p>/<label> above)."""
+    parts: list[str] = []
+    try:
+        eid = el.get_attribute("id")
+        if eid:
+            lab = el.locator(f"xpath=//label[contains(@for,'{eid}')]").first
+            if lab.count():
+                parts.append(lab.inner_text() or "")
+        wrapped = el.locator("xpath=ancestor::label[1]").first
+        if wrapped.count():
+            parts.append(wrapped.inner_text() or "")
+        legend = el.locator("xpath=ancestor::fieldset[1]//legend[1]").first
+        if legend.count():
+            parts.append(legend.inner_text() or "")
+    except Exception:
+        pass
+    # Nearest preceding text blocks: the field's own preceding sibling, then one level up
+    node = el
+    for _ in range(2):
+        try:
+            prev = node.locator("xpath=preceding-sibling::*[1]").first
+            if prev.count():
+                t = (prev.inner_text() or "").strip()
+                if t and len(t) < 400:
+                    parts.append(t)
+            node = node.locator("xpath=..").first
+            if not node.count():
+                break
+        except Exception:
+            break
+    return " ".join(dict.fromkeys(p for p in parts if p))
+
+
+def _match_answer(question_text: str, answers: list[tuple[str, str]]) -> str | None:
+    """Return the stored answer whose question best matches `question_text`.
+
+    Recall-based: what fraction of the stored question's tokens appear in the
+    field's surrounding text. Threshold 0.5. Never returns a guess below that.
+    """
+    q = _norm(question_text)
+    q_tokens = set(q.split())
+    if len(q_tokens) < 3:
+        return None
+    best: str | None = None
+    best_score = 0.0
+    for stored_q, answer in answers:
+        s_tokens = set(_norm(stored_q).split())
+        if len(s_tokens) < 2:
+            continue
+        score = len(q_tokens & s_tokens) / len(s_tokens)
+        if score > best_score:
+            best, best_score = answer, score
+    return best if best_score >= 0.5 else None
+
+
+def fill_screening_questions(page, ctx: ApplicationContext, log: LogFn) -> list[str]:
+    """Fill text fields whose surrounding question text matches a stored answer.
+
+    Fields with no stored match are left blank and logged as
+    'unanswered_question' — the caller (or the user) must supply the answer.
+    """
+    filled: list[str] = []
+    if not ctx.answers:
+        return filled
+    try:
+        els = page.locator("textarea, input[type=text], input:not([type])")
+    except Exception:
+        return filled
+    for i in range(els.count()):
+        el = els.nth(i)
+        if not _visible(el):
+            continue
+        key = _element_key(el)
+        if _classify(key):  # identity/contact fields are handled elsewhere
+            continue
+        qtext = _question_text_for(el)
+        if not qtext:
+            continue
+        answer = _match_answer(qtext, ctx.answers)
+        if not answer:
+            log("unanswered_question", (key or qtext)[:120],
+                f"no stored answer matches — left blank (ask user): {qtext[:100]}")
+            continue
+        try:
+            _fill_text(el, answer)
+            filled.append("screening_question")
+            log("filled", "screening_question", f"Q≈{qtext[:80]} | A≈{answer[:80]}")
+        except Exception as e:
+            log("field_error", "screening_question", f"{type(e).__name__}"[:120])
+    return filled
+
+
 def _handle_work_auth(el, key: str, ctx: ApplicationContext, log: LogFn, filled: list) -> None:
     """Pick the H-1B / sponsorship option when the profile needs sponsorship."""
     low = key.lower()
@@ -257,6 +360,7 @@ class GreenhouseAdapter(AtsAdapter):
             except Exception as e:
                 log("field_error", field, f"{type(e).__name__}"[:120])
         filled += fill_heuristic(page, ctx, log)
+        filled += fill_screening_questions(page, ctx, log)
         filled += fill_file_uploads(page, ctx, log)
         filled += fill_consent(page, ctx, log)
         log("adapter", "greenhouse", f"filled {len(filled)} fields")
@@ -293,6 +397,7 @@ class LeverAdapter(AtsAdapter):
             except Exception as e:
                 log("field_error", field, f"{type(e).__name__}"[:120])
         filled += fill_heuristic(page, ctx, log)
+        filled += fill_screening_questions(page, ctx, log)
         filled += fill_file_uploads(page, ctx, log)
         filled += fill_consent(page, ctx, log)
         log("adapter", "lever", f"filled {len(filled)} fields")
@@ -310,6 +415,7 @@ class AshbyAdapter(AtsAdapter):
     def fill(self, page, ctx: ApplicationContext, log: LogFn) -> list[str]:
         # Ashby forms are React-heavy and mostly custom-labeled: heuristic-first
         filled = fill_heuristic(page, ctx, log)
+        filled += fill_screening_questions(page, ctx, log)
         filled += fill_file_uploads(page, ctx, log)
         filled += fill_consent(page, ctx, log)
         log("adapter", "ashby", f"filled {len(filled)} fields (heuristic-first)")
@@ -331,6 +437,7 @@ class WorkdayAdapter(AtsAdapter):
     def fill(self, page, ctx: ApplicationContext, log: LogFn) -> list[str]:
         log("adapter_note", "workday", "experimental — Workday SPA; best-effort heuristic fill")
         filled = fill_heuristic(page, ctx, log)
+        filled += fill_screening_questions(page, ctx, log)
         filled += fill_file_uploads(page, ctx, log)
         filled += fill_consent(page, ctx, log)
         return filled

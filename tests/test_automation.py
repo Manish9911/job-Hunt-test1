@@ -83,6 +83,7 @@ def _seed(app, apply_url: str, title: str = "Software Engineer (Java)",
         for q, a in (
             ("Why are you interested in this role?", "Java/Spring stack matches my 4+ years of experience."),
             ("Are you authorized to work in the US?", "Yes, with H-1B sponsorship."),
+            ("What is your notice period / availability to start?", "Notice period of 1 month."),
         ):
             db.add(CommonAnswer(profile_id=profile.id, question=q, answer=a))
         docx_path = app.state.data_dir / f"test_resume_{profile.id}.docx"
@@ -209,6 +210,24 @@ def test_check_captcha_patterns():
         assert label in str(ei.value)
 
 
+def test_match_answer_thresholds():
+    from backend.app.automation.adapters import _match_answer
+
+    answers = [
+        ("What is your notice period / availability to start?", "Notice period of 1 month."),
+        ("Why are you interested in this role?", "Java/Spring stack matches my experience."),
+    ]
+    assert _match_answer(
+        "Why are you interested in this role?", answers
+    ) == "Java/Spring stack matches my experience."
+    assert _match_answer(
+        "Please tell us your notice period / availability to start, if any.", answers
+    ) == "Notice period of 1 month."
+    # below threshold -> no guess
+    assert _match_answer("What is your favorite color?", answers) is None
+    assert _match_answer("x y z", answers) is None  # too short to match anything
+
+
 def test_application_and_actionlog_models(app):
     Session = app.state.SessionLocal
     db = Session()
@@ -298,6 +317,12 @@ GREENHOUSE_HTML = """
   <label>Email <input name="fields[email]"></label>
   <label>Phone <input name="fields[phone]"></label>
   <label>Resume <input type="file" name="resume"></label>
+  <p>Why are you interested in this role?</p>
+  <textarea name="motivation"></textarea>
+  <p>What is your notice period / availability to start?</p>
+  <textarea name="notice"></textarea>
+  <p>What is your favorite color?</p>
+  <textarea name="color"></textarea>
   <label><input type="checkbox" name="gdpr_consent"> I consent to the processing of my personal data (GDPR / data protection)</label>
   <label><input type="radio" name="wa" value="no"> I do not require visa sponsorship (no sponsorship needed)</label>
   <label><input type="radio" name="wa" value="h1b"> I require H-1B visa sponsorship</label>
@@ -393,6 +418,12 @@ def test_e2e_greenhouse_dry_run(app, mock_ats):
     assert _wait_capture("greenhouse", "gdpr_consent") == "true"
     assert _wait_capture("greenhouse", "wa") == "true"  # H-1B radio checked
     assert (_wait_capture("greenhouse", "resume") or "").endswith(".docx")
+
+    # screening questions: stored answers auto-filled, unknown left blank
+    assert _wait_capture("greenhouse", "motivation") == \
+        "Java/Spring stack matches my 4+ years of experience."
+    assert _wait_capture("greenhouse", "notice") == "Notice period of 1 month."
+    assert _wait_capture("greenhouse", "color") is None  # never guessed
 
 
 @requires_chromium

@@ -20,4 +20,69 @@
     <p><button type="submit">Save profile</button></p>
   </form>
 </div>
+<div class="card">
+  <h2>Application screening questions — asked up front</h2>
+  <p class="muted">
+    Answer these once during profile setup so the application dry-runs can fill them
+    automatically. If an employer asks something new during a run, you'll be asked once —
+    the answer is saved here for every future application.
+  </p>
+  <div id="screening-list"><p class="muted">Loading your saved answers…</p></div>
+  <p><button id="screening-save">Save screening answers</button> <span id="screening-status" class="muted"></span></p>
+  <script>
+    (function () {
+      var QUESTIONS = [
+        'What country are you currently based in?',
+        'Preferred work location / arrangement?',
+        'Are you authorized to work in the United States?',
+        'Are you now or in the future in need of sponsorship?',
+        'Are you open to relocating to the Netherlands for this role?',
+        'Will you require sponsorship to work in the Netherlands now or in the future?',
+        'What is your notice period / availability to start?',
+        'What are your salary expectations? (updated)',
+        'Why are you interested in this role?',
+        'Is your experience on the product or platform side?'
+      ];
+      function norm(s) { return (s || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/ +/g, ' ').trim(); }
+      fetch('/api/common-answers').then(function (r) { return r.json(); }).then(function (existing) {
+        var byQ = {};
+        existing.forEach(function (a) { byQ[norm(a.question)] = a; });
+        var list = document.getElementById('screening-list');
+        list.innerHTML = '';
+        QUESTIONS.forEach(function (q) {
+          var match = byQ[norm(q)] || null;
+          var row = document.createElement('div');
+          var lab = document.createElement('label');
+          lab.textContent = q;
+          var inp = document.createElement('input');
+          inp.dataset.question = q;
+          inp.dataset.id = match ? match.id : '';
+          inp.value = match ? match.answer : '';
+          row.appendChild(lab);
+          row.appendChild(inp);
+          list.appendChild(row);
+        });
+      });
+      document.getElementById('screening-save').addEventListener('click', function () {
+        var status = document.getElementById('screening-status');
+        status.textContent = 'Saving…';
+        var inputs = Array.prototype.slice.call(document.querySelectorAll('#screening-list input'));
+        var chain = Promise.resolve();
+        inputs.forEach(function (inp) {
+          chain = chain.then(function () {
+            var body = {question: inp.dataset.question, answer: inp.value, category: 'screening'};
+            var url = inp.dataset.id ? '/api/common-answers/' + inp.dataset.id : '/api/common-answers';
+            return fetch(url, {
+              method: inp.dataset.id ? 'PUT' : 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify(body)
+            }).then(function (res) { if (!res.ok) throw new Error(inp.dataset.question + ': HTTP ' + res.status); });
+          });
+        });
+        chain.then(function () { status.textContent = 'Saved — the dry-run will use these.'; })
+             .catch(function (e) { status.textContent = 'Error: ' + e.message; });
+      });
+    })();
+  </script>
+</div>
 {% endblock %}
