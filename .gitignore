@@ -1,0 +1,34 @@
+# --- Secrets: never commit ---
+.env
+*.pem
+*.key
+
+# --- Personal data: resumes, DB, screenshots, cookies, uploads ---
+data/
+*.db
+*.sqlite3
+resumes/
+uploads/
+cookies/
+sessions/
+screenshots/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# --- Logs (action logs are stored in DB, not files) ---
+*.log
+logs/
