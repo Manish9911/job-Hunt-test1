@@ -132,8 +132,12 @@ Two sources (no others, per spec):
 
 **Dedup**: `sha1(source|apply_url)` (fallback `source|company|title`); re-ingests update in place.
 
+**Match scoring (0-100)**: every stored job is scored against the master resume by a deterministic, explainable scorer (`ingestion/match.py`) — skill overlap with the JD (60 pts), role/experience fit (25 pts), location/remote/visa fit (15 pts). Two scores per job: `match_score` (master resume, "before tailoring") and `match_score_tailored` ("after tailoring", filled by Phase 3 — the difference is the tailoring lift). The scorer is a swappable interface: Phase 3 replaces it with an LLM pass over the full JD text when a provider is configured.
+
+**Dashboard**: the Jobs page shows **matched jobs only** by default, sorted by match score, with an **Apply** button per job that opens the employer's own careers/ATS page (you review and submit there), and a "show all" toggle. Job detail shows the score breakdown (skills/role/fit + matched skills).
+
 **Known limitation — hiring.cafe bot wall**: hiring.cafe sits behind Cloudflare and returns 403 to automated HTTP requests (and to headless browser sessions). We do **not** bypass CAPTCHAs/bot detection. Fallback: open the page in a normal browser, copy the page source, and paste it into the "Manual fallback" box on the Jobs page — it parses exactly like the live fetch. The Greenhouse/Lever direct feeds are unaffected and work fully automated.
 
-**Dashboard pages**: `/companies` (regional breakdown + ATS discovery + feed-pull controls) and `/jobs` (filter pass/fail list, per-job detail, hiring.cafe pull + manual paste, re-run-filters button).
+**Dashboard pages**: `/companies` (regional breakdown + ATS discovery + feed-pull controls) and `/jobs` (matched jobs sorted by score, per-job detail with score breakdown, hiring.cafe pull + manual paste, re-run-filters and re-score buttons).
 
-Verified on 2026-11-02: 766 companies parsed (244 US / 275 EU), 25 companies ATS-checked (3 Greenhouse, 1 Ashby, 0 errors), 245 jobs ingested from 3 Greenhouse feeds, 15 passing filters after the city-geo refinement.
+Verified on 2026-11-02: 766 companies parsed (244 US / 275 EU), 25 companies ATS-checked (3 Greenhouse, 1 Ashby, 0 errors), 245 jobs ingested from 3 Greenhouse feeds, 15 passing filters (avg match 50/100, top: "Software Engineer II (Java)" at 95).
