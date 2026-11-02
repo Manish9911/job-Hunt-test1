@@ -2,7 +2,7 @@
 
 Local, human-in-the-loop automated job-application pipeline.
 
-> **Status: Phase 2 complete (job ingestion) — on branch `phase-2-ingestion`, pending approval.**
+> **Status: Phase 3 complete (LLM tailoring engine) — on branch `phase-3-tailoring`, pending approval.**
 
 ## What it will do
 
@@ -139,5 +139,18 @@ Two sources (no others, per spec):
 **Known limitation — hiring.cafe bot wall**: hiring.cafe sits behind Cloudflare and returns 403 to automated HTTP requests (and to headless browser sessions). We do **not** bypass CAPTCHAs/bot detection. Fallback: open the page in a normal browser, copy the page source, and paste it into the "Manual fallback" box on the Jobs page — it parses exactly like the live fetch. The Greenhouse/Lever direct feeds are unaffected and work fully automated.
 
 **Dashboard pages**: `/companies` (regional breakdown + ATS discovery + feed-pull controls) and `/jobs` (matched jobs sorted by score, per-job detail with score breakdown, hiring.cafe pull + manual paste, re-run-filters and re-score buttons).
+
+## Phase 3 — LLM tailoring engine
+
+Job detail page → **Resume tailoring** card:
+
+1. **JD acquisition**: fetched automatically — Greenhouse/Lever apply URLs are resolved through their public JSON APIs (full description included); anything else is a text scrape of the apply page. A manual paste box is always available as fallback.
+2. **Tailoring** with the LLM (OpenAI `gpt-4o-mini` default, swappable via `LLM_PROVIDER`/`OPENAI_API_KEY`/`OPENAI_BASE_URL` in `.env`) under a strict **truth contract**: only reorder, reword, and emphasize — never invent employers, dates, degrees, or skills. **Every LLM output is machine-validated** against the master resume (employer/date/degree/skill/contact checks); a rejection triggers one retry, then a **deterministic reorder-only fallback** guarantees a truthful artifact even when the LLM hallucinates or is unavailable.
+3. **Outputs**: (a) match score with reasoning — before (master resume) and after (tailored resume) tailoring, with the lift; (b) tailored resume as **DOCX and PDF** (generated locally, no external tools); (c) optional **cover letter** (LLM only, facts from the resume only).
+4. **Diff** vs the master resume is shown on the job page.
+
+**Without an API key** the engine runs in deterministic mode: JD-keyword reordering (100% truth-preserving) and skill-coverage scoring. Add `OPENAI_API_KEY` to `.env` for semantic LLM scoring + rewording + cover letters.
+
+Verified 2026-11-02 (live): real Adyen "Software Engineer II (Java)" job — JD auto-fetched from Greenhouse API, tailored resume generated, before/after 100/100 (deterministic mode), 2-page PDF + 38KB DOCX exports visually verified; hallucination-fallback path covered by unit tests.
 
 Verified on 2026-11-02: 766 companies parsed (244 US / 275 EU), 25 companies ATS-checked (3 Greenhouse, 1 Ashby, 0 errors), 245 jobs ingested from 3 Greenhouse feeds, 15 passing filters (avg match 50/100, top: "Software Engineer II (Java)" at 95).
