@@ -3,7 +3,18 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from .db.deps import get_db, get_profile
-from .db.models import CommonAnswer, Company, Education, Job, Profile, Resume, Skill, WorkHistory
+from .db.models import (
+    ActionLog,
+    Application,
+    CommonAnswer,
+    Company,
+    Education,
+    Job,
+    Profile,
+    Resume,
+    Skill,
+    WorkHistory,
+)
 
 router = APIRouter(tags=["pages"])
 
@@ -147,3 +158,35 @@ def job_detail_page(request: Request, job_id: int, db: Session = Depends(get_db)
     from .api.tailor import tailored_view
 
     return _render(request, "job_detail.html", **_ctx("jobs", job=job, tailored=tailored_view(db, job)))
+
+
+@router.get("/applications", response_class=HTMLResponse)
+def applications_page(request: Request, db: Session = Depends(get_db)):
+    rows = (
+        db.query(Application)
+        .order_by(Application.created_at.desc(), Application.id.desc())
+        .limit(200)
+        .all()
+    )
+    app_list = []
+    for a in rows:
+        log_count = (
+            db.query(ActionLog)
+            .filter(ActionLog.application_id == a.id)
+            .count()
+        )
+        app_list.append(
+            {
+                "id": a.id,
+                "status": a.status,
+                "dry_run": a.dry_run,
+                "error": a.error_text,
+                "created_at": a.created_at,
+                "log_count": log_count,
+                "has_screenshot": bool(a.screenshot_path),
+                "screenshot_url": f"/api/applications/{a.id}/screenshot" if a.screenshot_path else None,
+                "job": a.job,
+                "resume": a.resume,
+            }
+        )
+    return _render(request, "applications.html", **_ctx("applications", apps=app_list))

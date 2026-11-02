@@ -7,7 +7,17 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from . import pages
-from .api import common_answers, education, jobs, profile, resumes, skills, work_history, tailor
+from .api import (
+    applications,
+    common_answers,
+    education,
+    jobs,
+    profile,
+    resumes,
+    skills,
+    tailor,
+    work_history,
+)
 from .config import Settings
 from .db import models  # noqa: F401  (register models on Base)
 from .db.base import Base, ensure_columns, make_engine, make_session
@@ -49,6 +59,7 @@ def create_app(database_url: str | None = None) -> FastAPI:
         jobs.router,
         jobs.router_public,
         tailor.router,
+        applications.router,
     ):
         app.include_router(router)
 
