@@ -426,6 +426,57 @@ def test_e2e_greenhouse_dry_run(app, mock_ats):
     assert _wait_capture("greenhouse", "color") is None  # never guessed
 
 
+class _FakeLLM:
+    """Stand-in LLM: is_available()=True, returns canned replies."""
+    name = "fake"
+
+    def __init__(self, replies):
+        self.replies = list(replies)
+        self.calls = 0
+
+    def is_available(self):
+        return True
+
+    def complete(self, system, user, temperature=0.2, timeout=90.0):
+        self.calls += 1
+        if len(self.replies) > 1:
+            return self.replies.pop(0)
+        return self.replies[0]
+
+
+@requires_chromium
+def test_e2e_ai_draft_for_random_question(app, mock_ats, monkeypatch):
+    """User rule: random screening questions get an AI-drafted, truth-checked
+    answer (logged as ai_draft_answer) instead of being left blank."""
+    import backend.app.llm as llm_mod
+
+    ai_answer = "Blue, honestly — I pick tech stacks, not paint colors."
+    fake = _FakeLLM([ai_answer])
+    monkeypatch.setattr(llm_mod, "get_llm", lambda settings: fake)
+
+    profile_id, job_id = _seed(app, f"{mock_ats}/greenhouse/1", source="greenhouse")
+    result = _run(app, job_id)
+    assert result["status"] == "dry_run_completed", result
+
+    # the previously-blank "favorite color" field is now filled by the drafter
+    assert _wait_capture("greenhouse", "color") == ai_answer
+    # stored answers still win over the AI (no LLM call for them)
+    assert _wait_capture("greenhouse", "notice") == "Notice period of 1 month."
+    assert _wait_capture("greenhouse", "motivation") == \
+        "Java/Spring stack matches my 4+ years of experience."
+    assert fake.calls == 1  # only the unknown question reached the LLM
+
+    db = app.state.SessionLocal()
+    try:
+        app_row = db.query(Application).filter_by(job_id=job_id).first()
+        log = db.query(ActionLog).filter_by(application_id=app_row.id).all()
+        actions = {l.action for l in log}
+        assert "ai_draft_answer" in actions
+        assert "ai_drafter_ready" in actions
+    finally:
+        db.close()
+
+
 @requires_chromium
 def test_e2e_lever_dry_run(app, mock_ats):
     profile_id, job_id = _seed(app, f"{mock_ats}/lever/1", title="SWE II", company="LeverCo", source="lever")

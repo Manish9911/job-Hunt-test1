@@ -12,6 +12,12 @@ from sqlalchemy.orm import Session
 from ..db.models import Company, Job, Skill
 from .ats import detect_company_ats, registrable_domain
 from .ats_jobs import fetch_jobs_for_endpoint
+from .abstractvc import (
+    fetch_all_jobs,
+    make_client as make_abstractvc_client,
+    parse_abstractvc_response,
+    bootstrap_token,
+)
 from .filters import job_passes_filters
 from .hiring_cafe import (
     DEFAULT_PAGES,
@@ -158,6 +164,32 @@ def ingest_hiring_cafe(db: Session, pages: list[str] | None = None) -> dict:
 def ingest_hiring_cafe_manual(db: Session, html: str) -> dict:
     jobs = parse_hiring_cafe_html(html)
     return {"pages": 1, "errors": [], "stored": store_jobs(db, jobs)}
+
+
+def ingest_abstractvc(db: Session, query: dict | None = None) -> dict:
+    """Pull the SWE jobs from jobs.abstractvc.com (Abstract Ventures board)."""
+    results: dict = {"errors": [], "pages": 0, "seen": 0}
+    all_jobs: list[dict] = []
+    with make_abstractvc_client() as client:
+        try:
+            token = bootstrap_token(client)
+        except IngestionBlocked as exc:
+            results["errors"].append(f"bootstrap: BLOCKED — {exc}")
+            return results
+        try:
+            raw = fetch_all_jobs(client, token, query=query)
+        except IngestionBlocked as exc:
+            results["errors"].append(f"search: BLOCKED — {exc}")
+            results["stored"] = store_jobs(db, all_jobs)
+            return results
+        except httpx.HTTPError as exc:
+            results["errors"].append(f"search: {exc.__class__.__name__}: {str(exc)[:120]}")
+            results["stored"] = store_jobs(db, all_jobs)
+            return results
+        all_jobs = parse_abstractvc_response({"jobs": raw})
+        results["seen"] = len(all_jobs)
+    results["stored"] = store_jobs(db, all_jobs)
+    return results
 
 
 def refilter_jobs(db: Session) -> dict:

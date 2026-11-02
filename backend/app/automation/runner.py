@@ -110,6 +110,42 @@ def run_application(db, job_id: int, resume_id: int | None = None,
                          action=action, field=field_name, detail=detail))
         db.commit()
 
+    # AI drafter for random screening questions (user rule: humanized answers,
+    # no AI footprints). Active only when an LLM is configured; otherwise
+    # unknown questions stay blank + logged, exactly as before.
+    drafter = None
+    try:
+        from ..config import Settings
+        from ..llm import get_llm
+        from ..services import answer as answer_svc
+        from ..services.tailor import fetch_jd, render_resume_text
+
+        llm = get_llm(Settings())
+        if llm.is_available():
+            structure = json.loads(resume.content_json or "{}")
+            resume_text = render_resume_text(structure)
+            try:
+                jd_text = fetch_jd(job)
+            except Exception:
+                jd_text = ""
+            drafter = answer_svc.make_drafter(
+                applicant_name=profile.full_name,
+                job_title=job.title,
+                company=job.company,
+                jd_text=jd_text,
+                resume_text=resume_text,
+                saved_answers=answers,
+                llm=llm,
+            )
+            if drafter is not None:
+                log("ai_drafter_ready", None,
+                    f"random screening questions get AI-drafted, fact-checked answers ({llm.name})")
+        else:
+            log("ai_drafter_off", None, "no LLM configured — unknown questions stay blank")
+    except Exception as e:
+        drafter = None
+        log("ai_drafter_unavailable", None, f"{type(e).__name__}: {str(e)[:120]}")
+
     status = "dry_run_completed" if dry_run else "ready_for_submission"
     error_text: str | None = None
     filled: list[str] = []
@@ -158,7 +194,7 @@ def run_application(db, job_id: int, resume_id: int | None = None,
                 else:
                     notes["adapter"] = adapter.name
                     log("adapter_matched", adapter.name, job.apply_url[:120])
-                    filled = adapter.fill(page, ctx, log)
+                    filled = adapter.fill(page, ctx, log, drafter=drafter)
                     notes["filled_fields"] = filled
                     if not filled:
                         log("fill_warning", None, "no fields were filled — custom form?")

@@ -94,7 +94,7 @@ class AtsAdapter:
     def detect(cls, url: str) -> bool:
         return False
 
-    def fill(self, page, ctx: ApplicationContext, log: LogFn) -> list[str]:
+    def fill(self, page, ctx: ApplicationContext, log: LogFn, drafter=None) -> list[str]:
         raise NotImplementedError
 
 

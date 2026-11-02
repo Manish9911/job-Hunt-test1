@@ -268,14 +268,17 @@ def _match_answer(question_text: str, answers: list[tuple[str, str]]) -> str | N
     return best if best_score >= 0.5 else None
 
 
-def fill_screening_questions(page, ctx: ApplicationContext, log: LogFn) -> list[str]:
+def fill_screening_questions(page, ctx: ApplicationContext, log: LogFn,
+                             drafter=None) -> list[str]:
     """Fill text fields whose surrounding question text matches a stored answer.
 
-    Fields with no stored match are left blank and logged as
-    'unanswered_question' — the caller (or the user) must supply the answer.
+    ``drafter`` (optional): callable(question_text) -> answer | None. Used for
+    questions with no stored answer — an AI-drafted, truth-checked, humanized
+    response (see services.answer). Fields that end up with neither a stored
+    answer nor a draft are left blank and logged as 'unanswered_question'.
     """
     filled: list[str] = []
-    if not ctx.answers:
+    if not ctx.answers and drafter is None:
         return filled
     try:
         els = page.locator("textarea, input[type=text], input:not([type])")
@@ -292,6 +295,14 @@ def fill_screening_questions(page, ctx: ApplicationContext, log: LogFn) -> list[
         if not qtext:
             continue
         answer = _match_answer(qtext, ctx.answers)
+        ai_draft = False
+        if not answer and drafter is not None:
+            try:
+                answer = drafter(qtext)
+            except Exception as e:
+                answer = None
+                log("ai_draft_error", (key or qtext)[:120], f"{type(e).__name__}"[:120])
+            ai_draft = bool(answer)
         if not answer:
             log("unanswered_question", (key or qtext)[:120],
                 f"no stored answer matches — left blank (ask user): {qtext[:100]}")
@@ -299,7 +310,11 @@ def fill_screening_questions(page, ctx: ApplicationContext, log: LogFn) -> list[
         try:
             _fill_text(el, answer)
             filled.append("screening_question")
-            log("filled", "screening_question", f"Q≈{qtext[:80]} | A≈{answer[:80]}")
+            if ai_draft:
+                log("ai_draft_answer", (key or qtext)[:120],
+                    f"Q≈{qtext[:80]} | A≈{answer[:140]} (AI-drafted, fact-checked — review before submit)")
+            else:
+                log("filled", "screening_question", f"Q≈{qtext[:80]} | A≈{answer[:80]}")
         except Exception as e:
             log("field_error", "screening_question", f"{type(e).__name__}"[:120])
     return filled
@@ -338,7 +353,7 @@ class GreenhouseAdapter(AtsAdapter):
         u = url.lower()
         return "greenhouse.io" in u or "job-boards.greenhouse.io" in u
 
-    def fill(self, page, ctx: ApplicationContext, log: LogFn) -> list[str]:
+    def fill(self, page, ctx: ApplicationContext, log: LogFn, drafter=None) -> list[str]:
         filled: list[str] = []
         # Greenhouse standard field names
         mapping = {
@@ -360,7 +375,7 @@ class GreenhouseAdapter(AtsAdapter):
             except Exception as e:
                 log("field_error", field, f"{type(e).__name__}"[:120])
         filled += fill_heuristic(page, ctx, log)
-        filled += fill_screening_questions(page, ctx, log)
+        filled += fill_screening_questions(page, ctx, log, drafter=drafter)
         filled += fill_file_uploads(page, ctx, log)
         filled += fill_consent(page, ctx, log)
         log("adapter", "greenhouse", f"filled {len(filled)} fields")
@@ -375,7 +390,7 @@ class LeverAdapter(AtsAdapter):
         u = url.lower()
         return "lever.co" in u or "apply.lever.co" in u or "jobs.lever.co" in u
 
-    def fill(self, page, ctx: ApplicationContext, log: LogFn) -> list[str]:
+    def fill(self, page, ctx: ApplicationContext, log: LogFn, drafter=None) -> list[str]:
         filled: list[str] = []
         mapping = {
             "first_name": "input#firstName, input[name=firstName]",
@@ -397,7 +412,7 @@ class LeverAdapter(AtsAdapter):
             except Exception as e:
                 log("field_error", field, f"{type(e).__name__}"[:120])
         filled += fill_heuristic(page, ctx, log)
-        filled += fill_screening_questions(page, ctx, log)
+        filled += fill_screening_questions(page, ctx, log, drafter=drafter)
         filled += fill_file_uploads(page, ctx, log)
         filled += fill_consent(page, ctx, log)
         log("adapter", "lever", f"filled {len(filled)} fields")
@@ -412,10 +427,10 @@ class AshbyAdapter(AtsAdapter):
         u = url.lower()
         return "ashbyhq.com" in u or "jobs.ashbyhq.com" in u or "apply.workable" not in u and "ashby" in u
 
-    def fill(self, page, ctx: ApplicationContext, log: LogFn) -> list[str]:
+    def fill(self, page, ctx: ApplicationContext, log: LogFn, drafter=None) -> list[str]:
         # Ashby forms are React-heavy and mostly custom-labeled: heuristic-first
         filled = fill_heuristic(page, ctx, log)
-        filled += fill_screening_questions(page, ctx, log)
+        filled += fill_screening_questions(page, ctx, log, drafter=drafter)
         filled += fill_file_uploads(page, ctx, log)
         filled += fill_consent(page, ctx, log)
         log("adapter", "ashby", f"filled {len(filled)} fields (heuristic-first)")
@@ -434,10 +449,10 @@ class WorkdayAdapter(AtsAdapter):
             or "myworkdayjobs.com" in u
         )
 
-    def fill(self, page, ctx: ApplicationContext, log: LogFn) -> list[str]:
+    def fill(self, page, ctx: ApplicationContext, log: LogFn, drafter=None) -> list[str]:
         log("adapter_note", "workday", "experimental — Workday SPA; best-effort heuristic fill")
         filled = fill_heuristic(page, ctx, log)
-        filled += fill_screening_questions(page, ctx, log)
+        filled += fill_screening_questions(page, ctx, log, drafter=drafter)
         filled += fill_file_uploads(page, ctx, log)
         filled += fill_consent(page, ctx, log)
         return filled

@@ -11,6 +11,9 @@
     <button hx-post="/api/ingest/jobs/hiring-cafe" hx-swap="none"
             hx-on::after-request="if(event.detail.successfullySwapped) location.reload()">
       Pull from hiring.cafe (US latest + visa-sponsorship + remote)</button>
+    <button hx-post="/api/ingest/jobs/abstractvc" hx-swap="none"
+            hx-on::after-request="if(event.detail.successfullySwapped) location.reload()">
+      Pull from AbstractVC (software-engineer roles, ~400 jobs)</button>
     <button class="secondary" hx-post="/api/ingest/jobs/refilter" hx-swap="none"
             hx-on::after-request="if(event.detail.successfullySwapped) location.reload()">
       Re-run filters</button>
