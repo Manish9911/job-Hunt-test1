@@ -2,7 +2,7 @@
 
 Local, human-in-the-loop automated job-application pipeline.
 
-> **Status: Phase 1 complete (dashboard) — pending PR review/merge.**
+> **Status: Phase 2 complete (job ingestion) — on branch `phase-2-ingestion`, pending approval.**
 
 ## What it will do
 
@@ -120,3 +120,20 @@ Open http://127.0.0.1:8000/ — the dashboard.
 ```bash
 uv run python scripts/seed_profile.py path/to/resume.docx
 ```
+
+## Phase 2 — Job ingestion
+
+Two sources (no others, per spec):
+
+1. **hiring-without-whiteboards** — the curated company list is parsed into the `companies` table (name, website, careers URL, region). Each company's ATS is then discovered by probing public JSON APIs first (Greenhouse `/jobs`, Lever `/postings`, Ashby, Workday, Rippling) and HTML careers pages as fallback, with polite delays. Companies whose ATS has a public job feed (Greenhouse/Lever today) have their listings pulled and stored in `jobs`.
+2. **hiring.cafe** — the aggregator is fetched and its `__NEXT_DATA__` JSON parsed into structured jobs, then followed through to the original employer/ATS apply URL.
+
+**Filtering** (`ingestion/filters.py`, pure functions): SWE title match, region (US = remote + onsite, EU = remote-only), 4+ YOE when stated, and US roles must not *explicitly* rule out visa sponsorship. Region detection handles country codes, country names, and bare city names (Greenhouse feeds give city-only, e.g. "Amsterdam").
+
+**Dedup**: `sha1(source|apply_url)` (fallback `source|company|title`); re-ingests update in place.
+
+**Known limitation — hiring.cafe bot wall**: hiring.cafe sits behind Cloudflare and returns 403 to automated HTTP requests (and to headless browser sessions). We do **not** bypass CAPTCHAs/bot detection. Fallback: open the page in a normal browser, copy the page source, and paste it into the "Manual fallback" box on the Jobs page — it parses exactly like the live fetch. The Greenhouse/Lever direct feeds are unaffected and work fully automated.
+
+**Dashboard pages**: `/companies` (regional breakdown + ATS discovery + feed-pull controls) and `/jobs` (filter pass/fail list, per-job detail, hiring.cafe pull + manual paste, re-run-filters button).
+
+Verified on 2026-11-02: 766 companies parsed (244 US / 275 EU), 25 companies ATS-checked (3 Greenhouse, 1 Ashby, 0 errors), 245 jobs ingested from 3 Greenhouse feeds, 15 passing filters after the city-geo refinement.
