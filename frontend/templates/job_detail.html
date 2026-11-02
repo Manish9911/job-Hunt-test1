@@ -11,6 +11,25 @@
     {% if job.yoe %}<tr><th>Min experience</th><td>{{ job.yoe }} years</td></tr>{% endif %}
     {% if job.salary_min %}<tr><th>Salary</th><td>{{ job.salary_currency }} {{ job.salary_min }} – {{ job.salary_max or '?' }}</td></tr>{% endif %}
     <tr><th>Filters</th><td>{% if job.passes_filters %}<span class="badge">passes your filters</span>{% else %}dropped: {{ (job.filter_reasons_json | from_json_list) | join('; ') }}{% endif %}</td></tr>
+    {% set bd = job.match_breakdown_json | from_json %}
+    <tr><th>Resume match</th><td>
+      {% if job.match_score is not none %}
+      <span class="badge">{{ job.match_score }}/100</span>
+      <span class="muted">master resume (before tailoring) ·
+        skills {{ bd.get('skills', {}).get('points', '?') }}/{{ bd.get('skills', {}).get('max', '?') }} ·
+        role {{ bd.get('role', {}).get('points', '?') }}/{{ bd.get('role', {}).get('max', '?') }} ·
+        fit {{ bd.get('meta', {}).get('points', '?') }}/{{ bd.get('meta', {}).get('max', '?') }}</span>
+      {% if bd.get('skills', {}).get('matched') %}
+        <br><span class="muted">matched skills: {{ bd['skills']['matched'] | join(', ') }}</span>
+      {% endif %}
+      {% else %}<span class="muted">not scored yet</span>{% endif %}
+    </td></tr>
+    <tr><th>After tailoring</th><td>
+      {% if job.match_score_tailored is not none %}
+      <span class="badge">{{ job.match_score_tailored }}/100</span>
+      {% if job.match_score is not none %}<span class="muted">lift {{ '%+d' | format(job.match_score_tailored - job.match_score) }}</span>{% endif %}
+      {% else %}<span class="muted">— populated in Phase 3 when this job's resume is tailored</span>{% endif %}
+    </td></tr>
   </table>
   {% if job.apply_url %}
   <p style="margin-top:14px">

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
@@ -116,18 +116,24 @@ def companies_page(request: Request, db: Session = Depends(get_db)):
 
 
 @router.get("/jobs", response_class=HTMLResponse)
-def jobs_page(request: Request, db: Session = Depends(get_db)):
+def jobs_page(
+    request: Request,
+    all: bool = Query(False, description="show non-matching jobs too"),
+    db: Session = Depends(get_db),
+):
     total = db.query(Job).count()
     passing = db.query(Job).filter(Job.passes_filters.is_(True)).count()
+    query = db.query(Job)
+    if not all:
+        query = query.filter(Job.passes_filters.is_(True))
     jobs = (
-        db.query(Job)
-        .order_by(Job.fetched_at.desc(), Job.id.desc())
+        query.order_by(Job.match_score.desc().nulls_last(), Job.id.desc())
         .limit(200)
         .all()
     )
     return _render(
         request, "jobs.html",
-        **_ctx("jobs", jobs=jobs, total=total, passing=passing),
+        **_ctx("jobs", jobs=jobs, total=total, passing=passing, show_all=all),
     )
 
 
