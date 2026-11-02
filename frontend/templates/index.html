@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Overview</h1>
+<div class="card">
+  <h2>Profile</h2>
+  {% if profile.full_name %}
+    <p><strong>{{ profile.full_name }}</strong> — {{ profile.email or 'no email' }}{% if profile.location %} · {{ profile.location }}{% endif %}</p>
+    <p class="muted">{{ profile.work_authorization or 'Work authorization not set' }}{% if profile.sponsorship_needed %} · sponsorship needed{% endif %}</p>
+  {% else %}
+    <p class="muted">No profile yet. <a href="/profile" style="color:var(--accent)">Set it up →</a></p>
+  {% endif %}
+</div>
+<div class="card">
+  <div class="grid">
+    <div class="stat"><div class="num">{{ counts.resumes }}</div><div class="muted">resumes</div></div>
+    <div class="stat"><div class="num">{{ counts.skills }}</div><div class="muted">skills</div></div>
+    <div class="stat"><div class="num">{{ counts.work_history }}</div><div class="muted">roles</div></div>
+    <div class="stat"><div class="num">{{ counts.education }}</div><div class="muted">education</div></div>
+    <div class="stat"><div class="num">{{ counts.common_answers }}</div><div class="muted">stored answers</div></div>
+  </div>
+  {% if master %}
+    <p class="muted" style="margin-top:14px">Master resume: <span class="badge">{{ master.label }}</span></p>
+  {% else %}
+    <p class="muted" style="margin-top:14px">No master resume yet — <a href="/resumes" style="color:var(--accent)">upload one →</a></p>
+  {% endif %}
+</div>
+<div class="card">
+  <p class="muted">Pipeline: dashboard (this) → job ingestion (Phase 2) → LLM tailoring (Phase 3) → ATS automation (Phase 4) → orchestration &amp; tracking (Phase 5).</p>
+</div>
+{% endblock %}

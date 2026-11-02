@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Skills</h1>
+<div class="card">
+  <form hx-post="/api/skills" hx-swap="none" hx-on::after-request="if(event.detail.successfullySwapped) location.reload()" style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+    <div style="flex:2;min-width:200px"><label>Skill</label><input name="name" required placeholder="e.g. Spring Boot"></div>
+    <div style="flex:2;min-width:200px"><label>Category</label><input name="category" placeholder="e.g. Backend"></div>
+    <button type="submit">Add skill</button>
+  </form>
+</div>
+<div class="card">
+  <table>
+    <tr><th>Skill</th><th>Category</th><th></th></tr>
+    {% for s in skills %}
+    <tr>
+      <td>{{ s.name }}</td>
+      <td class="muted">{{ s.category }}</td>
+      <td><button class="secondary" hx-delete="/api/skills/{{ s.id }}" hx-swap="none" hx-on::after-request="if(event.detail.successfullySwapped) location.reload()">delete</button></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="3" class="muted">No skills yet.</td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endblock %}
