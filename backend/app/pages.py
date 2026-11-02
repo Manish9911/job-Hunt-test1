@@ -35,6 +35,10 @@ def index(
     profile: Profile = Depends(get_profile),
     db: Session = Depends(get_db),
 ):
+    """Consolidated Overview: profile, resumes, skills, experience, education,
+    answers and companies all live on this single page (no separate tabs)."""
+    import json
+
     master = (
         db.query(Resume)
         .filter(Resume.profile_id == profile.id, Resume.is_master.is_(True))
@@ -47,8 +51,39 @@ def index(
         "work_history": db.query(WorkHistory).filter(WorkHistory.profile_id == pid).count(),
         "education": db.query(Education).filter(Education.profile_id == pid).count(),
         "common_answers": db.query(CommonAnswer).filter(CommonAnswer.profile_id == pid).count(),
+        "companies": db.query(Company).count(),
     }
-    return _render(request, "index.html", **_ctx("overview", profile=profile, master=master, counts=counts))
+    try:
+        locations = json.loads(profile.locations_json) if profile.locations_json else []
+    except json.JSONDecodeError:
+        locations = []
+    resumes = db.query(Resume).filter(Resume.profile_id == pid).order_by(Resume.id).all()
+    skills = (
+        db.query(Skill).filter(Skill.profile_id == pid)
+        .order_by(Skill.category, Skill.name).all()
+    )
+    history = db.query(WorkHistory).filter(WorkHistory.profile_id == pid).order_by(WorkHistory.id).all()
+    education = db.query(Education).filter(Education.profile_id == pid).order_by(Education.id).all()
+    answers = (
+        db.query(CommonAnswer).filter(CommonAnswer.profile_id == pid)
+        .order_by(CommonAnswer.category, CommonAnswer.id).all()
+    )
+    companies = db.query(Company).order_by(Company.name).all()
+    by_region: dict[str, int] = {}
+    by_ats: dict[str, int] = {}
+    for c in companies:
+        by_region[c.region] = by_region.get(c.region, 0) + 1
+        by_ats[c.ats] = by_ats.get(c.ats, 0) + 1
+    return _render(
+        request, "index.html",
+        **_ctx(
+            "overview",
+            profile=profile, master=master, counts=counts, locations=locations,
+            resumes=resumes, skills=skills, history=history, education=education,
+            answers=answers, companies=companies,
+            by_region=by_region, by_ats=by_ats,
+        ),
+    )
 
 
 @router.get("/profile", response_class=HTMLResponse)

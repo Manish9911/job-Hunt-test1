@@ -1,32 +1,5 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>Education</h1>
-<div class="card">
-  <form hx-post="/api/education" hx-swap="none" hx-on::after-request="if(event.detail.successfullySwapped) location.reload()">
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px">
-      <div><label>School</label><input name="school" required></div>
-      <div><label>Degree</label><input name="degree" placeholder="e.g. Master of Science"></div>
-      <div><label>Field</label><input name="field" placeholder="e.g. Computer Science"></div>
-      <div><label>Start</label><input name="start_date" placeholder="e.g. Jan 2023"></div>
-      <div><label>End</label><input name="end_date" placeholder="e.g. May 2024"></div>
-    </div>
-    <p><button type="submit">Add education</button></p>
-  </form>
-</div>
-<div class="card">
-  <table>
-    <tr><th>School</th><th>Degree</th><th>Field</th><th>Dates</th><th></th></tr>
-    {% for e in education %}
-    <tr>
-      <td>{{ e.school }}</td>
-      <td>{{ e.degree }}</td>
-      <td class="muted">{{ e.field }}</td>
-      <td class="muted">{{ e.start_date }} – {{ e.end_date }}</td>
-      <td><button class="secondary" hx-delete="/api/education/{{ e.id }}" hx-swap="none" hx-on::after-request="if(event.detail.successfullySwapped) location.reload()">delete</button></td>
-    </tr>
-    {% else %}
-    <tr><td colspan="5" class="muted">No education entries yet.</td></tr>
-    {% endfor %}
-  </table>
-</div>
+{% include "partials/education.html" %}
 {% endblock %}

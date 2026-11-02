@@ -1,34 +1,5 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>Resumes</h1>
-<div class="card">
-  <h2>Upload (DOCX / PDF — parsed into structured JSON)</h2>
-  <form hx-post="/api/resumes" hx-swap="none" hx-on::after-request="if(event.detail.successfullySwapped) location.reload()" style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
-    <div style="flex:1;min-width:220px"><label>File</label><input type="file" name="file" accept=".docx,.pdf" required></div>
-    <div style="flex:1;min-width:180px"><label>Label (optional)</label><input name="label" placeholder="e.g. AWS SDE II"></div>
-    <button type="submit">Upload &amp; parse</button>
-  </form>
-</div>
-<div class="card">
-  <h2>Versions</h2>
-  <table>
-    <tr><th>ID</th><th>Label</th><th>File</th><th>Uploaded</th><th>Master</th><th>Actions</th></tr>
-    {% for r in resumes %}
-    <tr>
-      <td>{{ r.id }}</td>
-      <td>{{ r.label }}</td>
-      <td class="muted">{{ r.original_filename }}</td>
-      <td class="muted">{{ r.created_at.strftime('%Y-%m-%d') if r.created_at else '' }}</td>
-      <td>{% if r.is_master %}<span class="badge">master</span>{% else %}<button class="secondary" hx-post="/api/resumes/{{ r.id }}/master" hx-swap="none" hx-on::after-request="if(event.detail.successfullySwapped) location.reload()">set</button>{% endif %}</td>
-      <td>
-        <details><summary>parsed JSON</summary><pre>{{ r.content_json }}</pre></details>
-        <a class="muted" href="/api/resumes/{{ r.id }}/download" style="color:var(--accent)">download</a>
-        <button class="secondary" hx-delete="/api/resumes/{{ r.id }}" hx-swap="none" hx-on::after-request="if(event.detail.successfullySwapped) location.reload()">delete</button>
-      </td>
-    </tr>
-    {% else %}
-    <tr><td colspan="6" class="muted">No resumes yet.</td></tr>
-    {% endfor %}
-  </table>
-</div>
+{% include "partials/resumes.html" %}
 {% endblock %}

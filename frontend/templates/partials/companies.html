@@ -1,0 +1,39 @@
+<div class="card">
+  <h2>Ingestion controls</h2>
+  <div style="display:flex;gap:12px;flex-wrap:wrap">
+    <button hx-post="/api/ingest/companies" hx-swap="none"
+            hx-on::after-request="if(event.detail.successfullySwapped) location.reload()">
+      1 · Pull company list (hiring-without-whiteboards)</button>
+    <button class="secondary" hx-post="/api/ingest/ats?limit=25" hx-swap="none"
+            hx-on::after-request="if(event.detail.successfullySwapped) location.reload()">
+      2 · Discover ATS for next 25 unknown</button>
+    <button class="secondary" hx-post="/api/ingest/jobs/companies?limit=25" hx-swap="none"
+            hx-on::after-request="if(event.detail.successfullySwapped) location.reload()">
+      3 · Pull job feeds from detected ATS</button>
+  </div>
+  <p class="muted" style="margin-top:10px">ATS discovery is polite and resumable — run it as often as you like. Greenhouse/Lever jobs feed directly from their public JSON APIs.</p>
+</div>
+{% if companies %}
+<div class="card">
+  <h2>{{ companies | length }} companies · by region:
+    {% for r, n in by_region.items() %}<span class="badge">{{ r }}: {{ n }}</span>{% endfor %}
+    · by ATS:
+    {% for a, n in by_ats.items() %}<span class="badge">{{ a }}: {{ n }}</span>{% endfor %}
+  </h2>
+  <table>
+    <tr><th>Company</th><th>Region</th><th>Locations</th><th>Remote</th><th>ATS</th><th>Careers page</th></tr>
+    {% for c in companies %}
+    <tr>
+      <td>{% if c.website %}<a href="{{ c.website }}" target="_blank" style="color:var(--accent)">{{ c.name }}</a>{% else %}{{ c.name }}{% endif %}</td>
+      <td><span class="badge">{{ c.region }}</span></td>
+      <td class="muted">{{ c.locations_json | from_json_list | join(', ') }}</td>
+      <td>{% if c.remote %}✓{% endif %}</td>
+      <td>{{ c.ats }}{% if c.jobs_endpoint %} <span class="badge">feed</span>{% endif %}</td>
+      <td>{% if c.careers_url %}<a href="{{ c.careers_url }}" target="_blank" style="color:var(--accent)">open</a>{% else %}<span class="muted">—</span>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% else %}
+<div class="card"><p class="muted">No companies yet — run step 1.</p></div>
+{% endif %}
