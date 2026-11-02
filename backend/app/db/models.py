@@ -116,6 +116,42 @@ class CommonAnswer(Base):
     profile: Mapped["Profile"] = relationship(back_populates="common_answers")
 
 
+class Application(Base):
+    """One application attempt (dry-run or not) for a job, using one resume version."""
+    __tablename__ = "applications"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id"), index=True)
+    resume_id: Mapped[int] = mapped_column(ForeignKey("resumes.id"))
+    status: Mapped[str] = mapped_column(String(40), default="pending")
+    # pending | dry_run_completed | captcha_manual | manual_required | failed
+    dry_run: Mapped[bool] = mapped_column(Boolean, default=True)
+    screenshot_path: Mapped[str | None] = mapped_column(String(512))
+    error_text: Mapped[str | None] = mapped_column(Text)
+    notes_json: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+    job: Mapped["Job"] = relationship(back_populates="applications")
+    resume: Mapped["Resume"] = relationship()
+    action_log: Mapped[list["ActionLog"]] = relationship(back_populates="application")
+
+
+class ActionLog(Base):
+    """Per-field audit trail for one application attempt (the 'log every action' hard rule)."""
+    __tablename__ = "action_log"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    application_id: Mapped[int] = mapped_column(ForeignKey("applications.id"), index=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("jobs.id"), index=True)
+    action: Mapped[str] = mapped_column(String(60))
+    field: Mapped[str | None] = mapped_column(String(200))
+    detail: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    application: Mapped["Application"] = relationship(back_populates="action_log")
+
+
 class Company(Base):
     __tablename__ = "companies"
 
@@ -171,3 +207,5 @@ class Job(Base):
     # Deduplication key: sha1(source|apply_url|company+title)
     unique_key: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    applications: Mapped[list["Application"]] = relationship(back_populates="job")
