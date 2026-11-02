@@ -86,6 +86,19 @@ jobflow/
 - **EU vs US screening questions** (GDPR, EEO, sponsorship) → common_answers store + pause-and-ask rule.
 - **Legal/ToS** → robots.txt check, skip automation-prohibiting sites, no CAPTCHA solving.
 
+## Confirmed preferences (Phase 0, 2026-11-01)
+
+| Preference | Value |
+|---|---|
+| Target roles | Any SWE role matching the tech stack (Java, Spring Boot, React, PostgreSQL, REST APIs, microservices, AWS); minimum **4+ years** of experience |
+| Locations | **US: remote + onsite**; **Europe: remote only** |
+| Work authorization | **US work visa (H1B/L1)** — US employers may need to sponsor. EU: remote-from-abroad roles only |
+| LLM provider | **OpenAI** (`gpt-4o-mini` default, `LLM_MODEL` overridable in `.env`) |
+| GitHub | Repo `jobflow`, **private**, account `Manish9911` (created on user instruction) |
+| Salary range | Not set yet — captured in the Phase 1 profile |
+
+Master resume: `Manish_Badugu_AWS_SDE_II` (Java/Spring/React full stack, 4+ yrs — Verizon Sr. Java Full Stack, Equifax Full Stack Developer, Polaris; MS CIS Christian Brothers U.; BE ECE Anurag G. of Inst.).
+
 ## Phases & workflow
 
 Phase 0 plan → 1 dashboard → 2 ingestion → 3 tailoring → 4 automation → 5 orchestration.
