@@ -2,7 +2,7 @@
 
 Local, human-in-the-loop automated job-application pipeline.
 
-> **Status: Phase 0 (plan) — skeleton only. No application code yet.**
+> **Status: Phase 1 complete (dashboard) — pending PR review/merge.**
 
 ## What it will do
 
@@ -104,11 +104,19 @@ Master resume: `Manish_Badugu_AWS_SDE_II` (Java/Spring/React full stack, 4+ yrs 
 Phase 0 plan → 1 dashboard → 2 ingestion → 3 tailoring → 4 automation → 5 orchestration.
 One feature branch per phase; PRs only after user approval + passing tests; PRs are never auto-merged.
 
-## Run (from Phase 1 onward)
+## Run (Phase 1+)
 
 ```bash
-uv sync                      # create venv, install deps
-cp .env.example .env         # add your LLM key
-uv run uvicorn backend.app.main:app --reload
-pytest                       # run tests
+uv venv && uv sync                 # create venv, install deps
+cp .env.example .env               # add your LLM key (needed from Phase 3)
+uv run uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
+uv run pytest -q                   # run tests
+```
+
+Open http://127.0.0.1:8000/ — the dashboard.
+
+**Seed your profile from a resume file** (uploads + parses it, fills profile/skills/history/education and starter screening answers):
+
+```bash
+uv run python scripts/seed_profile.py path/to/resume.docx
 ```
