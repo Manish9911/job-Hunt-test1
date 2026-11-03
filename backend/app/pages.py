@@ -177,9 +177,36 @@ def jobs_page(
         .limit(200)
         .all()
     )
+    # Applied column: latest Application per job (status + resume used).
+    job_ids = [j.id for j in jobs]
+    job_applications: dict[int, dict] = {}
+    if job_ids:
+        apps = (
+            db.query(Application)
+            .filter(Application.job_id.in_(job_ids))
+            .order_by(Application.id)
+            .all()
+        )
+        for a in apps:  # ascending id -> last one wins = latest attempt
+            resume_name = None
+            if a.resume_id:
+                r = db.get(Resume, a.resume_id)
+                if r is not None:
+                    resume_name = r.original_filename or f"resume #{a.resume_id}"
+            job_applications[a.job_id] = {
+                "status": a.status,
+                "resume": resume_name,
+                "notes": a.notes_json,
+                "finished_at": a.finished_at,
+            }
+    from .services.agent import get_agent
+    agent = get_agent(request).status()
     return _render(
         request, "jobs.html",
-        **_ctx("jobs", jobs=jobs, total=total, passing=passing, show_all=all),
+        **_ctx(
+            "jobs", jobs=jobs, total=total, passing=passing, show_all=all,
+            job_applications=job_applications, agent=agent,
+        ),
     )
 
 

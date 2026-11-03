@@ -1,16 +1,28 @@
-"""Application runner: drives Playwright, logs every action, never submits.
+"""Application runner: drives Playwright, logs every action.
 
 Flow per run:
   open apply_url -> captcha check -> ATS detection -> adapter fill
-  -> screenshot -> store Application + ActionLog rows.
+  -> screenshot -> [auto-submit when auto_submit=True] -> store Application
+  + ActionLog rows.
+
+Submit policy:
+  - dry-run (default): nothing is ever submitted.
+  - live, no auto_submit: form is filled + screenshotted; a human clicks submit.
+  - live + auto_submit (the agent): the runner clicks the form's own submit
+    button and records the outcome. Hard rules stay: NEVER solve a CAPTCHA
+    (a blocked form is logged + skipped, never bypassed) and never fill data
+    outside the profile/answers the user provided.
 
 Statuses:
-  dry_run_completed   form filled + screenshotted, nothing submitted (default)
-  ready_for_submission  same, but requested with dry_run=False — human must
-                        still open the form and click submit themselves
-  captcha_manual      bot challenge found — a human must finish this step
-  manual_required     no adapter matched the URL — apply by hand (link provided)
-  failed              technical failure (timeout, crash)
+  dry_run_completed        form filled + screenshotted, nothing submitted
+  ready_for_submission     filled, human must click submit
+  submitted                auto-submit clicked, success indicators seen
+  submit_uncertain         auto-submit clicked, outcome unconfirmed — review
+  submit_blocked_captcha   form filled, CAPTCHA guards submission — human step
+  submit_failed            submit button not found / click error
+  captcha_manual           bot challenge found before filling — human step
+  manual_required          no adapter matched the URL — apply by hand
+  failed                   technical failure (timeout, crash)
 """
 from __future__ import annotations
 
@@ -67,10 +79,108 @@ def _find_profile(db) -> Profile | None:
     return db.query(Profile).first()
 
 
+def _find_submit_button(page):
+    """Return the most plausible visible submit control, or None."""
+    selectors = (
+        'button[type="submit"]',
+        'input[type="submit"]',
+        'button:has-text("Submit application")',
+        'button:has-text("Submit")',
+        'button:has-text("Apply now")',
+        'button:has-text("Complete and submit")',
+        'button:has-text("Apply")',
+    )
+    for sel in selectors:
+        try:
+            loc = page.locator(sel)
+            n = loc.count()
+        except Exception:
+            continue
+        for i in range(min(n, 6)):
+            el = loc.nth(i)
+            try:
+                if el.is_visible() and el.is_enabled():
+                    return el
+            except Exception:
+                continue
+    return None
+
+
+def _auto_submit(page, log) -> tuple[str, str]:
+    """Click the form's submit button and judge the outcome.
+
+    Returns ``(status, note)`` with status one of: submitted,
+    submit_uncertain, submit_blocked_captcha, submit_failed.
+    Hard rules: never solve a CAPTCHA; never re-type anything.
+    """
+    try:
+        check_captcha(page)
+    except CaptchaDetected as e:
+        log("submit_blocked_captcha", None, e.evidence)
+        return "submit_blocked_captcha", f"CAPTCHA guards submission: {e.evidence}"
+
+    btn = _find_submit_button(page)
+    if btn is None:
+        log("submit_button_not_found", None, "no visible submit control — review manually")
+        return "submit_failed", "no submit button found — review the filled form and submit manually"
+
+    try:
+        before_url = page.url
+        btn.click(timeout=10000)
+    except Exception as e:
+        log("submit_click_error", None, f"{type(e).__name__}"[:200])
+        return "submit_failed", f"submit click failed: {type(e).__name__}"
+
+    # Give the ATS time to process + navigate to a confirmation page.
+    try:
+        page.wait_for_load_state("networkidle", timeout=20000)
+    except Exception:
+        pass
+    try:
+        page.wait_for_timeout(2500)
+    except Exception:
+        pass
+
+    try:
+        body = (page.inner_text("body") or "").lower()
+    except Exception:
+        body = ""
+    try:
+        new_url = page.url
+    except Exception:
+        new_url = before_url
+
+    success_markers = (
+        "thank", "thank you", "application has been received",
+        "we've received", "we have received", "successfully submitted",
+        "you're all set", "application received", "next steps",
+        "what happens next", "confirmation",
+    )
+    body_changed = new_url.rstrip("/") != before_url.rstrip("/")
+    has_marker = any(m in body for m in success_markers)
+    form_still_there = False
+    try:
+        form_still_there = page.locator('form input[type="email"]').count() > 0
+    except Exception:
+        pass
+
+    if has_marker or (body_changed and not form_still_there):
+        log("submitted", None, f"success indicators seen (url_changed={body_changed}, marker={has_marker})")
+        return "submitted", "submit clicked — confirmation indicators seen"
+    log("submit_uncertain", None, f"clicked, but no confirmation (url_changed={body_changed})")
+    return "submit_uncertain", "submit clicked — no confirmation page detected, verify with the employer"
+
+
 def run_application(db, job_id: int, resume_id: int | None = None,
                     dry_run: bool = True, headless: bool = True,
-                    nav_timeout_ms: int = 60000) -> dict:
-    """Run one (dry-run) application attempt. Synchronous — call from a thread."""
+                    nav_timeout_ms: int = 60000,
+                    auto_submit: bool = False) -> dict:
+    """Run one application attempt. Synchronous — call from a thread.
+
+    ``auto_submit=True`` (used by the auto-apply agent) makes the runner click
+    the form's submit button after filling. It never solves CAPTCHAs and never
+    submits when the run is a dry-run.
+    """
     from playwright.sync_api import sync_playwright
 
     job = db.get(Job, job_id)
@@ -211,6 +321,12 @@ def run_application(db, job_id: int, resume_id: int | None = None,
                     log("screenshot", None, shot.name)
                 except Exception as e:
                     log("screenshot_error", None, f"{type(e).__name__}"[:120])
+
+                if auto_submit and not dry_run:
+                    status, submit_note = _auto_submit(page, log)
+                    notes["submit"] = submit_note
+                elif auto_submit and dry_run:
+                    log("auto_submit_skipped", None, "dry-run — nothing submitted")
             finally:
                 browser.close()
     except CaptchaDetected as e:

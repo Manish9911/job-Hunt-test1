@@ -63,6 +63,13 @@ def create_app(database_url: str | None = None) -> FastAPI:
     ):
         app.include_router(router)
 
+    from .api import agent as agent_api
+    app.include_router(agent_api.router)
+    from .services.agent import AutoApplyAgent
+    agent_state = AutoApplyAgent()
+    agent_state.session_factory = make_session(engine)
+    app.state.agent = agent_state
+
     @app.get("/health")
     def health() -> dict:
         return {"status": "ok", "phase": 1}
