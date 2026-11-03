@@ -272,6 +272,17 @@ class MockHandler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_POST(self):
+        if self.path == "/submit":
+            length = int(self.headers.get("Content-Length", 0) or 0)
+            if length:
+                self.rfile.read(length)
+            body = SUBMIT_HTML.encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if self.path != "/capture":
             self.send_response(404)
             self.end_headers()
@@ -351,6 +362,12 @@ CAPTCHA_HTML = """
 UNKNOWN_HTML = """
 <html><body><h1>MockCorp careers</h1>
 <p>Please contact us to apply.</p></body></html>
+"""
+
+SUBMIT_HTML = """
+<html><body><h1>Thank you!</h1>
+<p>Your application has been received. Next steps will follow by email.</p>
+</body></html>
 """
 
 def _form_html(body_html: str, form_name: str) -> str:
@@ -545,3 +562,51 @@ def test_e2e_applications_page_renders(app, mock_ats, client):
     assert "Application tracker" in html
     assert "SWE (page)" in html
     assert "dry-run done" in html
+
+
+@requires_chromium
+def test_e2e_auto_submit_clicks_submit(app, mock_ats):
+    """Agent mode: live run + auto_submit=True -> the runner clicks the form's
+    submit button and records 'submitted' (mock ATS shows a thank-you page)."""
+    profile_id, job_id = _seed(app, f"{mock_ats}/greenhouse/1",
+                               title="SWE (auto-submit)", company="AutoCorp",
+                               source="greenhouse")
+    db = app.state.SessionLocal()
+    try:
+        result = run_application(db, job_id, dry_run=False, auto_submit=True)
+    finally:
+        db.close()
+    assert result["status"] == "submitted", result
+
+    db = app.state.SessionLocal()
+    try:
+        app_row = db.query(Application).filter_by(job_id=job_id).first()
+        assert app_row.status == "submitted"
+        actions = {l.action for l in db.query(ActionLog).filter_by(application_id=app_row.id)}
+        assert "submitted" in actions
+    finally:
+        db.close()
+
+
+@requires_chromium
+def test_e2e_auto_submit_never_fires_in_dry_run(app, mock_ats):
+    """Hard rule: dry-run + auto_submit must NOT submit anything."""
+    profile_id, job_id = _seed(app, f"{mock_ats}/greenhouse/1",
+                               title="SWE (dry+auto)", company="DryCorp",
+                               source="greenhouse")
+    db = app.state.SessionLocal()
+    try:
+        result = run_application(db, job_id, dry_run=True, auto_submit=True)
+    finally:
+        db.close()
+    assert result["status"] == "dry_run_completed", result
+
+    db = app.state.SessionLocal()
+    try:
+        app_row = db.query(Application).filter_by(job_id=job_id).first()
+        assert app_row.status == "dry_run_completed"
+        actions = {l.action for l in db.query(ActionLog).filter_by(application_id=app_row.id)}
+        assert "submitted" not in actions
+        assert "auto_submit_skipped" in actions
+    finally:
+        db.close()
