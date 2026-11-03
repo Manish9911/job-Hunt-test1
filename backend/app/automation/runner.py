@@ -27,8 +27,11 @@ Statuses:
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime
 from pathlib import Path
+
+from playwright.sync_api import TimeoutError as PWTimeout
 
 from ..db.models import ActionLog, Application, Job, Profile, Resume
 from .adapters import detect_adapter
@@ -80,15 +83,29 @@ def _find_profile(db) -> Profile | None:
 
 
 def _find_submit_button(page):
-    """Return the most plausible visible submit control, or None."""
+    """Return the most plausible visible submit control, or None.
+
+    A page with no form fields at all cannot have a valid submit button —
+    that's how the Valinor incident happened: the job *posting* page's
+    "Apply for this Job" CTA was treated as submit.
+    """
+    try:
+        has_form = (
+            page.locator("input:visible").count()
+            + page.locator("select:visible").count()
+            + page.locator("textarea:visible").count()
+        ) > 0
+    except Exception:
+        has_form = True
+    if not has_form:
+        return None
     selectors = (
         'button[type="submit"]',
         'input[type="submit"]',
         'button:has-text("Submit application")',
         'button:has-text("Submit")',
-        'button:has-text("Apply now")',
         'button:has-text("Complete and submit")',
-        'button:has-text("Apply")',
+        'button:has-text("Apply now")',
     )
     for sel in selectors:
         try:
@@ -104,6 +121,71 @@ def _find_submit_button(page):
             except Exception:
                 continue
     return None
+
+
+_APPLY_CTA_RE = re.compile(
+    r"apply for this job|apply for this position|"
+    r"start application|begin application", re.I)
+
+
+def _form_inputs_visible(page) -> bool:
+    """True when the page shows real form fields (i.e. the application form
+    is open — as opposed to a read-only job posting)."""
+    try:
+        loc = page.locator("input:visible, select:visible, textarea:visible")
+        for i in range(min(loc.count(), 20)):
+            el = loc.nth(i)
+            try:
+                tag = (el.evaluate("el => el.tagName") or "").upper()
+                t = (el.get_attribute("type") or "text").lower() if tag == "INPUT" else "text"
+            except Exception:
+                continue
+            if t not in ("submit", "button", "hidden", "reset"):
+                return True
+        return False
+    except Exception:
+        return False
+
+
+def _open_application_if_needed(page, log) -> None:
+    """Some ATS URLs are the JOB POSTING page — the form only appears after
+    clicking the "Apply for this Job" CTA. Do that step before filling, so
+    the adapter finds real form fields instead of a read-only JD page.
+
+    Guardrails (Valinor incident): never touch a *submit-type* button here,
+    and only look for CTAs when no form fields are visible.
+    """
+    if _form_inputs_visible(page):
+        return  # form already open
+    try:
+        cands = page.locator("button, a[role='button'], input[type='button']")
+        for i in range(min(cands.count(), 30)):
+            el = cands.nth(i)
+            try:
+                if not (el.is_visible() and el.is_enabled()):
+                    continue
+                if (el.get_attribute("type") or "").lower() == "submit":
+                    continue  # a form submit button — never an "open" CTA
+                text = (el.inner_text(timeout=500) or "").strip()
+            except Exception:
+                continue
+            if text and _APPLY_CTA_RE.search(text):
+                log("open_application", None, f"clicking CTA: {text[:60]!r}")
+                el.click(timeout=10000)
+                try:
+                    page.wait_for_load_state("networkidle", timeout=15000)
+                except PWTimeout:
+                    pass
+                try:
+                    page.wait_for_selector(
+                        'input[type="email"], input[type="text"]', timeout=10000)
+                except PWTimeout:
+                    pass
+                log("application_form_opened", None,
+                    "application form is open — filling it now")
+                return
+    except Exception as e:
+        log("open_application_failed", None, f"{type(e).__name__}: {str(e)[:120]}")
 
 
 def _auto_submit(page, log) -> tuple[str, str]:
@@ -332,6 +414,7 @@ def run_application(db, job_id: int, resume_id: int | None = None,
                 else:
                     notes["adapter"] = adapter.name
                     log("adapter_matched", adapter.name, job.apply_url[:120])
+                    _open_application_if_needed(page, log)
                     filled = adapter.fill(page, ctx, log, drafter=drafter)
                     notes["filled_fields"] = filled
                     if not filled:
@@ -353,6 +436,17 @@ def run_application(db, job_id: int, resume_id: int | None = None,
                 if auto_submit and not dry_run:
                     status, submit_note = _auto_submit(page, log)
                     notes["submit"] = submit_note
+                    # Truth guard (Valinor incident): "submitted" requires that
+                    # a form was actually filled. Zero fields + URL change is
+                    # just the apply CTA opening the form — not a submission.
+                    if status == "submitted" and not filled:
+                        status = "submit_uncertain"
+                        notes["submit"] += (" — CORRECTION: no form fields were "
+                                             "filled, so nothing was submitted; "
+                                             "the click only opened the "
+                                             "application. Re-run or finish manually.")
+                        log("submit_guard", None,
+                            "no fields filled — demoting submitted -> submit_uncertain")
                 elif auto_submit and dry_run:
                     log("auto_submit_skipped", None, "dry-run — nothing submitted")
             finally:

@@ -370,6 +370,17 @@ SUBMIT_HTML = """
 </body></html>
 """
 
+# Job POSTING page (like jobs.ashbyhq.com/<co>/<id>): read-only JD + an
+# "Apply for this Job" CTA that opens the actual form. The Valinor incident
+# was a run that treated this CTA as the submit button.
+POSTING_HTML = """
+<html><body>
+<h1>Senior Software Engineer — MockCorp</h1>
+<p>We are looking for a Java/Spring engineer.</p>
+<button onclick="window.location.href='/greenhouse/posting/apply'">Apply for this Job</button>
+</body></html>
+"""
+
 def _form_html(body_html: str, form_name: str) -> str:
     return body_html + _CAPTURE_JS.replace("FORM", form_name)
 
@@ -379,6 +390,8 @@ FORMS = {
     "/lever/1": _form_html(LEVER_HTML, "lever"),
     "/captcha": CAPTCHA_HTML,
     "/unknown": UNKNOWN_HTML,
+    "/greenhouse/posting": POSTING_HTML,
+    "/greenhouse/posting/apply": _form_html(GREENHOUSE_HTML, "posting"),
 }
 
 
@@ -642,5 +655,50 @@ def test_e2e_tailored_resume_materialized_and_attached(app, mock_ats):
         r = db.get(Resume, tailored_id)
         assert r.storage_path and os.path.exists(r.storage_path)
         assert r.original_filename.endswith(".docx")
+    finally:
+        db.close()
+
+
+@requires_chromium
+def test_submit_button_ignored_on_job_posting_page(app, mock_ats):
+    """Regression (Valinor incident): a job POSTING page has no form fields —
+    its 'Apply for this Job' CTA must never be treated as the submit button."""
+    from playwright.sync_api import sync_playwright
+    from backend.app.automation.runner import _find_submit_button
+
+    with sync_playwright() as p:
+        b = p.chromium.launch(headless=True)
+        page = b.new_page()
+        page.goto(f"{mock_ats}/greenhouse/posting", wait_until="domcontentloaded")
+        # sanity: the CTA is right there, tempting
+        assert page.locator("button:has-text('Apply for this Job')").count() == 1
+        assert _find_submit_button(page) is None
+        b.close()
+
+
+@requires_chromium
+def test_e2e_posting_page_cta_open_form_fill_submit(app, mock_ats):
+    """Regression (Valinor incident): when apply_url is the job POSTING page,
+    the runner clicks the 'Apply for this Job' CTA first, fills the form that
+    opens, and only then submits — and 'submitted' requires filled fields."""
+    profile_id, job_id = _seed(app, f"{mock_ats}/greenhouse/posting",
+                               title="SWE (posting CTA)", company="CTACorp",
+                               source="greenhouse")
+    db = app.state.SessionLocal()
+    try:
+        result = run_application(db, job_id, dry_run=False, auto_submit=True)
+    finally:
+        db.close()
+    assert result["status"] == "submitted", result
+    # the form behind the CTA must have been actually filled
+    assert result["filled_fields"], "no fields filled — CTA click was treated as submit?"
+
+    db = app.state.SessionLocal()
+    try:
+        app_row = db.query(Application).filter_by(job_id=job_id).first()
+        actions = {l.action for l in db.query(ActionLog).filter_by(application_id=app_row.id)}
+        assert "open_application" in actions          # CTA clicked
+        assert "application_form_opened" in actions
+        assert "submitted" in actions
     finally:
         db.close()
