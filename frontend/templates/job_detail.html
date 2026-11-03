@@ -97,5 +97,40 @@
   </form>
   {% endif %}
 </div>
+<div class="card">
+  <h2>Apply — dry-run (Phase 4)</h2>
+  <p class="muted">
+    Fills the employer's application form with your profile + tailored resume, uploads the
+    resume file, ticks GDPR/H-1B consents, screenshots the result, and logs every field.
+    <strong>It never submits — you review and click Apply yourself.</strong>
+    CAPTCHAs are detected and handed back to you (never solved).
+    Uses the tailored resume for this job if available, else your master resume.
+  </p>
+  {% if job.apply_url %}
+  <form hx-post="/api/jobs/{{ job.id }}/apply" hx-swap="none" hx-encoding="json"
+        hx-headers='{"Content-Type":"application/json"}'
+        hx-on::after-request="if(event.detail.successfullySwapped) location.reload()"
+        hx-disabled-elt="button[type=submit]" style="margin-top:10px">
+    <input type="hidden" name="dry_run" value="true">
+    <p>
+      <button type="submit" id="apply-dryrun">Run dry-run application (10–60s)</button>
+      <span id="apply-status" class="muted"></span>
+    </p>
+  </form>
+  <script>
+    (function () {
+      var btn = document.getElementById('apply-dryrun');
+      if (!btn) return;
+      btn.addEventListener('click', function () {
+        var st = document.getElementById('apply-status');
+        st.textContent = ' Running… opening the employer form, filling fields, screenshotting. Do not close this tab.';
+      });
+    })();
+  </script>
+  <p class="muted">Takes 10–60s: headless browser opens the employer form — the result appears on the <a href="/applications" style="color:var(--accent)">Applications</a> page.</p>
+  {% else %}
+  <p class="muted">No direct application URL captured for this listing — use the "Open original application page" link above and apply manually.</p>
+  {% endif %}
+</div>
 <p><a href="/jobs" style="color:var(--accent)">← back to all jobs</a></p>
 {% endblock %}

@@ -1,23 +1,5 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>Profile</h1>
-<div class="card">
-  <form hx-put="/api/profile" hx-swap="none" hx-on::after-request="if(event.detail.successfullySwapped) location.reload()">
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px">
-      <div><label>Full name</label><input name="full_name" value="{{ profile.full_name or '' }}"></div>
-      <div><label>Email</label><input name="email" value="{{ profile.email or '' }}"></div>
-      <div><label>Phone</label><input name="phone" value="{{ profile.phone or '' }}"></div>
-      <div><label>Location</label><input name="location" value="{{ profile.location or '' }}"></div>
-    </div>
-    <label>Summary</label><textarea name="summary" rows="4">{{ profile.summary or '' }}</textarea>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px">
-      <div><label>Work authorization</label><input name="work_authorization" value="{{ profile.work_authorization or '' }}" placeholder="e.g. US work visa (H1B/L1)"></div>
-      <div><label>Min salary</label><input name="min_salary" value="{{ profile.min_salary or '' }}" placeholder="e.g. $150k base"></div>
-    </div>
-    <label>Target roles</label><textarea name="target_roles" rows="2">{{ profile.target_roles or '' }}</textarea>
-    <label>Preferred locations (comma separated)</label><input name="locations_csv" value="{{ locations | join(', ') }}">
-    <label style="display:flex;align-items:center;gap:8px"><input type="checkbox" name="sponsorship_needed" value="true" style="width:auto" {% if profile.sponsorship_needed %}checked{% endif %}> Sponsorship needed (US)</label>
-    <p><button type="submit">Save profile</button></p>
-  </form>
-</div>
+{% include "partials/profile.html" %}
 {% endblock %}

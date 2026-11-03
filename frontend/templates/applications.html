@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Applications · jobflow{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>Application tracker</h1>
+  <p class="muted">
+    Every attempt is a <strong>dry-run by default</strong>: the form is filled and screenshotted,
+    then queued for <strong>your</strong> review. Nothing is ever submitted automatically,
+    CAPTCHAs are never solved (you finish those), and every field touched is logged below.
+  </p>
+  <div style="margin-top:10px">
+    <a class="badge" href="/jobs">Go to jobs to run a dry-run →</a>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Recent attempts</h2>
+  {% if apps %}
+  <table>
+    <thead>
+      <tr>
+        <th>Job</th>
+        <th>Company</th>
+        <th>Status</th>
+        <th>Mode</th>
+        <th>Resume</th>
+        <th>Log</th>
+        <th>When</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in apps %}
+      <tr>
+        <td>
+          <a href="/jobs/{{ a.job.id }}">{{ a.job.title }}</a>
+        </td>
+        <td>{{ a.job.company }}</td>
+        <td>
+          {% if a.status == 'dry_run_completed' %}<span class="badge">dry-run done</span>
+          {% elif a.status == 'ready_for_submission' %}<span class="badge">ready to submit</span>
+          {% elif a.status == 'captcha_manual' %}<span class="badge" style="background:rgba(255,180,80,.15);color:#ffb450">CAPTCHA — you</span>
+          {% elif a.status == 'manual_required' %}<span class="badge" style="background:rgba(255,120,120,.15);color:#ff8080">manual</span>
+          {% else %}<span class="badge">{{ a.status }}</span>{% endif %}
+          {% if a.error %}<div class="muted">{{ a.error }}</div>{% endif %}
+        </td>
+        <td>{{ 'dry-run' if a.dry_run else 'submit-mode' }}</td>
+        <td class="muted">{{ a.resume.original_filename if a.resume else '—' }}</td>
+        <td class="muted">{{ a.log_count }} actions</td>
+        <td class="muted">{{ a.created_at.strftime('%Y-%m-%d %H:%M') if a.created_at else '—' }}</td>
+        <td>
+          {% if a.has_screenshot %}<a href="{{ a.screenshot_url }}" target="_blank">screenshot</a>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No application attempts yet. Open a job and run a dry-run.</p>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,27 +1,5 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>Work history</h1>
-<div class="card">
-  <form hx-post="/api/work-history" hx-swap="none" hx-on::after-request="if(event.detail.successfullySwapped) location.reload()">
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px">
-      <div><label>Company</label><input name="company" required></div>
-      <div><label>Title</label><input name="title"></div>
-      <div><label>Location</label><input name="location"></div>
-      <div><label>Start</label><input name="start_date" placeholder="e.g. Jul 2025"></div>
-      <div><label>End</label><input name="end_date" placeholder="blank if current"></div>
-    </div>
-    <label style="display:flex;align-items:center;gap:8px"><input type="checkbox" name="is_current" value="true" style="width:auto"> Current role</label>
-    <label>Bullets (one per line)</label><textarea name="bullets" rows="5" placeholder="Developed REST APIs with Spring Boot..."></textarea>
-    <p><button type="submit">Add role</button></p>
-  </form>
-</div>
-<div class="card">
-  {% for w in history %}
-  <h2>{{ w.company }} — {{ w.title }} <span class="muted">{{ w.location or '' }} · {{ w.start_date }}–{{ w.end_date or 'Present' }}</span></h2>
-  <ul>{% for b in (w.bullets_json | from_json_list) %}<li>{{ b }}</li>{% endfor %}</ul>
-  <p><button class="secondary" hx-delete="/api/work-history/{{ w.id }}" hx-swap="none" hx-on::after-request="if(event.detail.successfullySwapped) location.reload()">delete</button></p>
-  {% else %}
-  <p class="muted">No work history yet.</p>
-  {% endfor %}
-</div>
+{% include "partials/experience.html" %}
 {% endblock %}

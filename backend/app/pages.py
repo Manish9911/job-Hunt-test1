@@ -3,7 +3,18 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from .db.deps import get_db, get_profile
-from .db.models import CommonAnswer, Company, Education, Job, Profile, Resume, Skill, WorkHistory
+from .db.models import (
+    ActionLog,
+    Application,
+    CommonAnswer,
+    Company,
+    Education,
+    Job,
+    Profile,
+    Resume,
+    Skill,
+    WorkHistory,
+)
 
 router = APIRouter(tags=["pages"])
 
@@ -24,6 +35,10 @@ def index(
     profile: Profile = Depends(get_profile),
     db: Session = Depends(get_db),
 ):
+    """Consolidated Overview: profile, resumes, skills, experience, education,
+    answers and companies all live on this single page (no separate tabs)."""
+    import json
+
     master = (
         db.query(Resume)
         .filter(Resume.profile_id == profile.id, Resume.is_master.is_(True))
@@ -36,8 +51,39 @@ def index(
         "work_history": db.query(WorkHistory).filter(WorkHistory.profile_id == pid).count(),
         "education": db.query(Education).filter(Education.profile_id == pid).count(),
         "common_answers": db.query(CommonAnswer).filter(CommonAnswer.profile_id == pid).count(),
+        "companies": db.query(Company).count(),
     }
-    return _render(request, "index.html", **_ctx("overview", profile=profile, master=master, counts=counts))
+    try:
+        locations = json.loads(profile.locations_json) if profile.locations_json else []
+    except json.JSONDecodeError:
+        locations = []
+    resumes = db.query(Resume).filter(Resume.profile_id == pid).order_by(Resume.id).all()
+    skills = (
+        db.query(Skill).filter(Skill.profile_id == pid)
+        .order_by(Skill.category, Skill.name).all()
+    )
+    history = db.query(WorkHistory).filter(WorkHistory.profile_id == pid).order_by(WorkHistory.id).all()
+    education = db.query(Education).filter(Education.profile_id == pid).order_by(Education.id).all()
+    answers = (
+        db.query(CommonAnswer).filter(CommonAnswer.profile_id == pid)
+        .order_by(CommonAnswer.category, CommonAnswer.id).all()
+    )
+    companies = db.query(Company).order_by(Company.name).all()
+    by_region: dict[str, int] = {}
+    by_ats: dict[str, int] = {}
+    for c in companies:
+        by_region[c.region] = by_region.get(c.region, 0) + 1
+        by_ats[c.ats] = by_ats.get(c.ats, 0) + 1
+    return _render(
+        request, "index.html",
+        **_ctx(
+            "overview",
+            profile=profile, master=master, counts=counts, locations=locations,
+            resumes=resumes, skills=skills, history=history, education=education,
+            answers=answers, companies=companies,
+            by_region=by_region, by_ats=by_ats,
+        ),
+    )
 
 
 @router.get("/profile", response_class=HTMLResponse)
@@ -131,9 +177,36 @@ def jobs_page(
         .limit(200)
         .all()
     )
+    # Applied column: latest Application per job (status + resume used).
+    job_ids = [j.id for j in jobs]
+    job_applications: dict[int, dict] = {}
+    if job_ids:
+        apps = (
+            db.query(Application)
+            .filter(Application.job_id.in_(job_ids))
+            .order_by(Application.id)
+            .all()
+        )
+        for a in apps:  # ascending id -> last one wins = latest attempt
+            resume_name = None
+            if a.resume_id:
+                r = db.get(Resume, a.resume_id)
+                if r is not None:
+                    resume_name = r.original_filename or f"resume #{a.resume_id}"
+            job_applications[a.job_id] = {
+                "status": a.status,
+                "resume": resume_name,
+                "notes": a.notes_json,
+                "finished_at": a.finished_at,
+            }
+    from .services.agent import get_agent
+    agent = get_agent(request).status()
     return _render(
         request, "jobs.html",
-        **_ctx("jobs", jobs=jobs, total=total, passing=passing, show_all=all),
+        **_ctx(
+            "jobs", jobs=jobs, total=total, passing=passing, show_all=all,
+            job_applications=job_applications, agent=agent,
+        ),
     )
 
 
@@ -147,3 +220,35 @@ def job_detail_page(request: Request, job_id: int, db: Session = Depends(get_db)
     from .api.tailor import tailored_view
 
     return _render(request, "job_detail.html", **_ctx("jobs", job=job, tailored=tailored_view(db, job)))
+
+
+@router.get("/applications", response_class=HTMLResponse)
+def applications_page(request: Request, db: Session = Depends(get_db)):
+    rows = (
+        db.query(Application)
+        .order_by(Application.created_at.desc(), Application.id.desc())
+        .limit(200)
+        .all()
+    )
+    app_list = []
+    for a in rows:
+        log_count = (
+            db.query(ActionLog)
+            .filter(ActionLog.application_id == a.id)
+            .count()
+        )
+        app_list.append(
+            {
+                "id": a.id,
+                "status": a.status,
+                "dry_run": a.dry_run,
+                "error": a.error_text,
+                "created_at": a.created_at,
+                "log_count": log_count,
+                "has_screenshot": bool(a.screenshot_path),
+                "screenshot_url": f"/api/applications/{a.id}/screenshot" if a.screenshot_path else None,
+                "job": a.job,
+                "resume": a.resume,
+            }
+        )
+    return _render(request, "applications.html", **_ctx("applications", apps=app_list))

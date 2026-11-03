@@ -97,6 +97,11 @@ def run_ingest_hiring_cafe(db: Session = Depends(get_db)):
     return service.ingest_hiring_cafe(db)
 
 
+@router.post("/jobs/abstractvc")
+def run_ingest_abstractvc(db: Session = Depends(get_db)):
+    return service.ingest_abstractvc(db)
+
+
 @router.post("/jobs/hiring-cafe/manual")
 def run_ingest_hiring_cafe_manual(body: ManualHtmlIn, db: Session = Depends(get_db)):
     if len(body.html) < 500:

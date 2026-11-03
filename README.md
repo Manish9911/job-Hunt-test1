@@ -2,7 +2,7 @@
 
 Local, human-in-the-loop automated job-application pipeline.
 
-> **Status: Phase 3 complete (LLM tailoring engine) — on branch `phase-3-tailoring`, pending approval.**
+> **Status: Phase 4 complete (ATS application automation, dry-run) — on branch `phase-4-automation`, pending approval.**
 
 ## What it will do
 
@@ -152,5 +152,22 @@ Job detail page → **Resume tailoring** card:
 **Without an API key** the engine runs in deterministic mode: JD-keyword reordering (100% truth-preserving) and skill-coverage scoring. Add `OPENAI_API_KEY` to `.env` for semantic LLM scoring + rewording + cover letters.
 
 Verified 2026-11-02 (live): real Adyen "Software Engineer II (Java)" job — JD auto-fetched from Greenhouse API, tailored resume generated, before/after 100/100 (deterministic mode), 2-page PDF + 38KB DOCX exports visually verified; hallucination-fallback path covered by unit tests.
+
+## Phase 4 — ATS application automation (dry-run)
+
+Job detail page → **Apply — dry-run** card. One click drives a headless Chromium (Playwright) through the employer's application form:
+
+1. **ATS detection** — Greenhouse, Lever, Ashby, Workday adapters (URL signature + ingest-source hint); anything unmatched is queued as `manual_required`.
+2. **Field fill** — profile/resume literals only (no generated text): first/last name, email, phone, location, LinkedIn/portfolio, resume **file upload**, GDPR/data-protection consent (EU) and H-1B sponsorship selection (US). Unrecognized free-text fields are deliberately left blank and logged — never guessed.
+3. **Hard rules enforced in code**:
+   - **DRY-RUN is the default and nothing is ever submitted automatically** — the run stops after fill + screenshot, status `dry_run_completed`; you review and click Apply yourself.
+   - **CAPTCHAs are never solved** — reCAPTCHA/hCaptcha/Cloudflare Turnstile/challenges are detected and the run is aborted as `captcha_manual` with a screenshot.
+   - **Every field touched is written to an audit trail** (`action_log`), viewable per attempt.
+   - No passwords are stored; only public profile data is used.
+4. **Applications tracker** (`/applications`) — every attempt: status badge, resume used, action count, timestamp, screenshot.
+
+Statuses: `dry_run_completed` · `ready_for_submission` (dry_run=false still stops before submit) · `captcha_manual` · `manual_required` · `failed`.
+
+Verified 2026-11-02: 106 tests pass, including 6 **real-Chromium E2E runs** against a local mock ATS (Greenhouse-style + Lever-style forms: typed values verified server-side, file upload verified, GDPR consent + H-1B radio verified, CAPTCHA abort, unknown-ATS fallback, API + tracker page).
 
 Verified on 2026-11-02: 766 companies parsed (244 US / 275 EU), 25 companies ATS-checked (3 Greenhouse, 1 Ashby, 0 errors), 245 jobs ingested from 3 Greenhouse feeds, 15 passing filters (avg match 50/100, top: "Software Engineer II (Java)" at 95).
