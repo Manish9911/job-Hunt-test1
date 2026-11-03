@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block content %}
+{% if show_all %}
+<h1>All jobs <span class="muted">— {{ passing }} matched / {{ total }} total</span> · <a href="/jobs" style="color:var(--accent)">show matched only</a></h1>
+{% else %}
+<h1>Matched jobs <span class="muted">— {{ passing }} pass your filters (sorted by resume match)</span> · <a href="/jobs?all=1" style="color:var(--accent)">show all {{ total }}</a></h1>
+{% endif %}
+<div class="card">
+  <h2>Ingestion controls</h2>
+  <div style="display:flex;gap:12px;flex-wrap:wrap">
+    <button hx-post="/api/ingest/jobs/hiring-cafe" hx-swap="none"
+            hx-on::after-request="if(event.detail.successfullySwapped) location.reload()">
+      Pull from hiring.cafe (US latest + visa-sponsorship + remote)</button>
+    <button class="secondary" hx-post="/api/ingest/jobs/refilter" hx-swap="none"
+            hx-on::after-request="if(event.detail.successfullySwapped) location.reload()">
+      Re-run filters</button>
+    <button class="secondary" hx-post="/api/ingest/jobs/score" hx-swap="none"
+            hx-on::after-request="if(event.detail.successfullySwapped) location.reload()">
+      Re-score matches vs my resume</button>
+  </div>
+  <details style="margin-top:12px">
+    <summary>Manual fallback — paste hiring.cafe page HTML (if the site blocks automated requests)</summary>
+    <form hx-post="/api/ingest/jobs/hiring-cafe/manual" hx-swap="none"
+          hx-on::after-request="if(event.detail.successfullySwapped) location.reload()" style="margin-top:10px">
+      <textarea name="html" rows="6" placeholder="View page source in your browser, copy everything, paste here" style="width:100%"></textarea>
+      <p><button type="submit">Parse pasted page</button></p>
+    </form>
+    <p class="muted">Save the hiring.cafe page in your browser (Ctrl+S), open the saved HTML in a text editor, copy it all, and paste above. Same parser, no bot checks involved.</p>
+  </details>
+</div>
+<div class="card">
+  <table>
+    <tr>
+      <th>Title</th><th>Company</th><th>Location</th>
+      <th>Match <span class="muted">/100</span></th>
+      <th>After tailoring <span class="muted">/100</span></th>
+      <th>Apply</th>
+    </tr>
+    {% for j in jobs %}
+    <tr>
+      <td><a href="/jobs/{{ j.id }}" style="color:var(--accent)">{{ j.title }}</a></td>
+      <td>{{ j.company }}</td>
+      <td class="muted">{{ j.location }}</td>
+      <td>
+        {% if j.match_score is not none %}
+        <span class="badge">{{ j.match_score }}</span>
+        {% else %}<span class="muted">?</span>{% endif %}
+      </td>
+      <td>
+        {% if j.match_score_tailored is not none %}
+        <span class="badge">{{ j.match_score_tailored }}</span>
+        {% else %}<span class="muted">— (Phase 3)</span>{% endif %}
+      </td>
+      <td>
+        {% if j.apply_url %}
+        <a href="{{ j.apply_url }}" target="_blank" rel="noopener"
+           style="display:inline-block;background:var(--accent);color:#fff;padding:5px 14px;border-radius:6px;text-decoration:none">Apply →</a>
+        {% else %}<span class="muted">—</span>{% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="muted">No matched jobs yet — run an ingestion button above, or
+      {% if not show_all %}<a href="/jobs?all=1" style="color:var(--accent)">view all {{ total }} jobs</a>{% endif %}.</td></tr>
+    {% endfor %}
+  </table>
+  <p class="muted" style="margin-top:10px">
+    Match = how well your <strong>master resume</strong> fits this job (0–100, ranked by it).
+    After tailoring = the same score once Phase 3 produces a tailored resume — the difference shows the tailoring lift.
+    Apply opens the employer's own careers/ATS page; you review and submit there.
+  </p>
+</div>
+{% endblock %}

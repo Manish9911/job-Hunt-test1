@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}jobflow{% endblock %}</title>
+  <script src="/static/htmx.min.js"></script>
+  <style>
+    :root { --bg:#0f1115; --card:#171a21; --fg:#e6e9ef; --muted:#9aa3b2; --accent:#4f8cff; --border:#262b36; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--bg); color:var(--fg); }
+    nav { display:flex; gap:4px; padding:12px 24px; border-bottom:1px solid var(--border); background:var(--card); flex-wrap:wrap; }
+    nav a { color:var(--muted); text-decoration:none; padding:6px 12px; border-radius:8px; font-size:14px; }
+    nav a.active, nav a:hover { color:var(--fg); background:rgba(79,140,255,.12); }
+    nav .brand { font-weight:700; color:var(--fg); margin-right:16px; }
+    main { max-width:980px; margin:24px auto; padding:0 16px; }
+    h1 { font-size:22px; } h2 { font-size:15px; color:var(--muted); margin-top:0; }
+    .card { background:var(--card); border:1px solid var(--border); border-radius:12px; padding:16px 20px; margin-bottom:16px; }
+    table { width:100%; border-collapse:collapse; font-size:14px; }
+    th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--border); vertical-align:top; }
+    th { color:var(--muted); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
+    input, textarea, select { background:var(--bg); color:var(--fg); border:1px solid var(--border); border-radius:8px; padding:8px 10px; font:inherit; width:100%; }
+    label { display:block; font-size:12px; color:var(--muted); margin:10px 0 4px; }
+    button { background:var(--accent); color:#fff; border:none; border-radius:8px; padding:8px 14px; font:inherit; cursor:pointer; }
+    button.secondary { background:var(--border); }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; }
+    .stat { text-align:center; } .stat .num { font-size:26px; font-weight:700; }
+    .badge { background:rgba(79,140,255,.15); color:var(--accent); border-radius:6px; padding:2px 8px; font-size:12px; }
+    pre { background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:12px; overflow:auto; font-size:12px; }
+    .muted { color:var(--muted); font-size:13px; }
+    details summary { cursor:pointer; color:var(--muted); font-size:13px; }
+    ul { margin:6px 0 10px; padding-left:20px; }
+  </style>
+</head>
+<body>
+  <nav>
+    <span class="brand">jobflow</span>
+    <a href="/" class="{{ 'active' if active == 'overview' }}">Overview</a>
+    <a href="/profile" class="{{ 'active' if active == 'profile' }}">Profile</a>
+    <a href="/resumes" class="{{ 'active' if active == 'resumes' }}">Resumes</a>
+    <a href="/skills" class="{{ 'active' if active == 'skills' }}">Skills</a>
+    <a href="/experience" class="{{ 'active' if active == 'experience' }}">Experience</a>
+    <a href="/education" class="{{ 'active' if active == 'education' }}">Education</a>
+    <a href="/answers" class="{{ 'active' if active == 'answers' }}">Answers</a>
+    <a href="/companies" class="{{ 'active' if active == 'companies' }}">Companies</a>
+    <a href="/jobs" class="{{ 'active' if active == 'jobs' }}">Jobs</a>
+  </nav>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

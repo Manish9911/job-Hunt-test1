@@ -2,7 +2,7 @@
 
 Local, human-in-the-loop automated job-application pipeline.
 
-> **Status: Phase 0 (plan) — skeleton only. No application code yet.**
+> **Status: Phase 3 complete (LLM tailoring engine) — on branch `phase-3-tailoring`, pending approval.**
 
 ## What it will do
 
@@ -104,11 +104,53 @@ Master resume: `Manish_Badugu_AWS_SDE_II` (Java/Spring/React full stack, 4+ yrs 
 Phase 0 plan → 1 dashboard → 2 ingestion → 3 tailoring → 4 automation → 5 orchestration.
 One feature branch per phase; PRs only after user approval + passing tests; PRs are never auto-merged.
 
-## Run (from Phase 1 onward)
+## Run (Phase 1+)
 
 ```bash
-uv sync                      # create venv, install deps
-cp .env.example .env         # add your LLM key
-uv run uvicorn backend.app.main:app --reload
-pytest                       # run tests
+uv venv && uv sync                 # create venv, install deps
+cp .env.example .env               # add your LLM key (needed from Phase 3)
+uv run uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
+uv run pytest -q                   # run tests
 ```
+
+Open http://127.0.0.1:8000/ — the dashboard.
+
+**Seed your profile from a resume file** (uploads + parses it, fills profile/skills/history/education and starter screening answers):
+
+```bash
+uv run python scripts/seed_profile.py path/to/resume.docx
+```
+
+## Phase 2 — Job ingestion
+
+Two sources (no others, per spec):
+
+1. **hiring-without-whiteboards** — the curated company list is parsed into the `companies` table (name, website, careers URL, region). Each company's ATS is then discovered by probing public JSON APIs first (Greenhouse `/jobs`, Lever `/postings`, Ashby, Workday, Rippling) and HTML careers pages as fallback, with polite delays. Companies whose ATS has a public job feed (Greenhouse/Lever today) have their listings pulled and stored in `jobs`.
+2. **hiring.cafe** — the aggregator is fetched and its `__NEXT_DATA__` JSON parsed into structured jobs, then followed through to the original employer/ATS apply URL.
+
+**Filtering** (`ingestion/filters.py`, pure functions): SWE title match, region (US = remote + onsite, EU = remote-only), 4+ YOE when stated, and US roles must not *explicitly* rule out visa sponsorship. Region detection handles country codes, country names, and bare city names (Greenhouse feeds give city-only, e.g. "Amsterdam").
+
+**Dedup**: `sha1(source|apply_url)` (fallback `source|company|title`); re-ingests update in place.
+
+**Match scoring (0-100)**: every stored job is scored against the master resume by a deterministic, explainable scorer (`ingestion/match.py`) — skill overlap with the JD (60 pts), role/experience fit (25 pts), location/remote/visa fit (15 pts). Two scores per job: `match_score` (master resume, "before tailoring") and `match_score_tailored` ("after tailoring", filled by Phase 3 — the difference is the tailoring lift). The scorer is a swappable interface: Phase 3 replaces it with an LLM pass over the full JD text when a provider is configured.
+
+**Dashboard**: the Jobs page shows **matched jobs only** by default, sorted by match score, with an **Apply** button per job that opens the employer's own careers/ATS page (you review and submit there), and a "show all" toggle. Job detail shows the score breakdown (skills/role/fit + matched skills).
+
+**Known limitation — hiring.cafe bot wall**: hiring.cafe sits behind Cloudflare and returns 403 to automated HTTP requests (and to headless browser sessions). We do **not** bypass CAPTCHAs/bot detection. Fallback: open the page in a normal browser, copy the page source, and paste it into the "Manual fallback" box on the Jobs page — it parses exactly like the live fetch. The Greenhouse/Lever direct feeds are unaffected and work fully automated.
+
+**Dashboard pages**: `/companies` (regional breakdown + ATS discovery + feed-pull controls) and `/jobs` (matched jobs sorted by score, per-job detail with score breakdown, hiring.cafe pull + manual paste, re-run-filters and re-score buttons).
+
+## Phase 3 — LLM tailoring engine
+
+Job detail page → **Resume tailoring** card:
+
+1. **JD acquisition**: fetched automatically — Greenhouse/Lever apply URLs are resolved through their public JSON APIs (full description included); anything else is a text scrape of the apply page. A manual paste box is always available as fallback.
+2. **Tailoring** with the LLM (OpenAI `gpt-4o-mini` default, swappable via `LLM_PROVIDER`/`OPENAI_API_KEY`/`OPENAI_BASE_URL` in `.env`) under a strict **truth contract**: only reorder, reword, and emphasize — never invent employers, dates, degrees, or skills. **Every LLM output is machine-validated** against the master resume (employer/date/degree/skill/contact checks); a rejection triggers one retry, then a **deterministic reorder-only fallback** guarantees a truthful artifact even when the LLM hallucinates or is unavailable.
+3. **Outputs**: (a) match score with reasoning — before (master resume) and after (tailored resume) tailoring, with the lift; (b) tailored resume as **DOCX and PDF** (generated locally, no external tools); (c) optional **cover letter** (LLM only, facts from the resume only).
+4. **Diff** vs the master resume is shown on the job page.
+
+**Without an API key** the engine runs in deterministic mode: JD-keyword reordering (100% truth-preserving) and skill-coverage scoring. Add `OPENAI_API_KEY` to `.env` for semantic LLM scoring + rewording + cover letters.
+
+Verified 2026-11-02 (live): real Adyen "Software Engineer II (Java)" job — JD auto-fetched from Greenhouse API, tailored resume generated, before/after 100/100 (deterministic mode), 2-page PDF + 38KB DOCX exports visually verified; hallucination-fallback path covered by unit tests.
+
+Verified on 2026-11-02: 766 companies parsed (244 US / 275 EU), 25 companies ATS-checked (3 Greenhouse, 1 Ashby, 0 errors), 245 jobs ingested from 3 Greenhouse feeds, 15 passing filters (avg match 50/100, top: "Software Engineer II (Java)" at 95).

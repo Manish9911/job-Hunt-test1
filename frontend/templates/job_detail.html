@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ job.title }}</h1>
+<div class="card">
+  <p><strong>{{ job.company }}</strong>
+    {% if job.company_website %}<a href="https://{{ job.company_website }}" target="_blank" style="color:var(--accent)">website</a>{% endif %}</p>
+  <p class="muted">{{ job.location or 'location not listed' }} · {{ job.source }} · fetched {{ job.fetched_at.strftime('%Y-%m-%d') if job.fetched_at else '' }}</p>
+  <table>
+    <tr><th>Remote</th><td>{% if job.remote %}Yes{% elif job.remote is false %}Onsite{% else %}Not specified{% endif %}</td></tr>
+    <tr><th>Visa sponsorship</th><td>{% if job.visa_sponsorship %}Yes{% elif job.visa_sponsorship is false %}No{% else %}Not specified{% endif %}</td></tr>
+    {% if job.yoe %}<tr><th>Min experience</th><td>{{ job.yoe }} years</td></tr>{% endif %}
+    {% if job.salary_min %}<tr><th>Salary</th><td>{{ job.salary_currency }} {{ job.salary_min }} – {{ job.salary_max or '?' }}</td></tr>{% endif %}
+    <tr><th>Filters</th><td>{% if job.passes_filters %}<span class="badge">passes your filters</span>{% else %}dropped: {{ (job.filter_reasons_json | from_json_list) | join('; ') }}{% endif %}</td></tr>
+    {% set bd = job.match_breakdown_json | from_json %}
+    <tr><th>Resume match</th><td>
+      {% if job.match_score is not none %}
+      <span class="badge">{{ job.match_score }}/100</span>
+      <span class="muted">master resume (before tailoring) ·
+        skills {{ bd.get('skills', {}).get('points', '?') }}/{{ bd.get('skills', {}).get('max', '?') }} ·
+        role {{ bd.get('role', {}).get('points', '?') }}/{{ bd.get('role', {}).get('max', '?') }} ·
+        fit {{ bd.get('meta', {}).get('points', '?') }}/{{ bd.get('meta', {}).get('max', '?') }}</span>
+      {% if bd.get('skills', {}).get('matched') %}
+        <br><span class="muted">matched skills: {{ bd['skills']['matched'] | join(', ') }}</span>
+      {% endif %}
+      {% else %}<span class="muted">not scored yet</span>{% endif %}
+    </td></tr>
+    <tr><th>After tailoring</th><td>
+      {% if job.match_score_tailored is not none %}
+      <span class="badge">{{ job.match_score_tailored }}/100</span>
+      {% if job.match_score is not none %}<span class="muted">lift {{ '%+d' | format(job.match_score_tailored - job.match_score) }}</span>{% endif %}
+      {% else %}<span class="muted">— populated in Phase 3 when this job's resume is tailored</span>{% endif %}
+    </td></tr>
+  </table>
+  {% if job.apply_url %}
+  <p style="margin-top:14px">
+    <a href="{{ job.apply_url }}" target="_blank"
+       style="display:inline-block;background:var(--accent);color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none">
+      Open original application page →
+    </a>
+    <span class="muted" style="margin-left:10px">{{ job.apply_url | truncate(70) }}</span>
+  </p>
+  {% else %}
+  <p class="muted">No direct application URL captured for this listing.</p>
+  {% endif %}
+</div>
+<div class="card">
+  <h2>Resume tailoring</h2>
+  {% if tailored.status == 'tailored' %}
+  <p>
+    Master resume (before): <span class="badge">{{ tailored.match_score_before if tailored.match_score_before is not none else '?' }}/100</span>
+    &nbsp;&nbsp; Tailored (after): <span class="badge">{{ tailored.match_score_after if tailored.match_score_after is not none else '?' }}/100</span>
+    {% if tailored.lift is not none %}<span class="muted">lift {{ tailored.lift }} pts</span>{% endif %}
+    <span class="muted">· method: {{ (tailored.notes or {}).get('method', '?') }}</span>
+  </p>
+  <div style="display:flex;gap:12px;flex-wrap:wrap;margin:10px 0">
+    <a href="{{ tailored.exports.docx }}" style="display:inline-block;background:var(--accent);color:#fff;padding:8px 16px;border-radius:8px;text-decoration:none">Download tailored DOCX</a>
+    <a href="{{ tailored.exports.pdf }}" style="display:inline-block;background:var(--accent);color:#fff;padding:8px 16px;border-radius:8px;text-decoration:none">Download tailored PDF</a>
+    <button class="secondary" hx-post="/api/jobs/{{ job.id }}/tailor" hx-swap="none"
+            hx-vals='{"jd_text": null, "cover_letter": false}'
+            hx-on::after-request="if(event.detail.successfullySwapped) location.reload()">Re-tailor</button>
+  </div>
+  {% if tailored.cover_letter %}
+  <details>
+    <summary>Cover letter</summary>
+    <pre style="white-space:pre-wrap;font-family:inherit;background:var(--card);padding:12px;border-radius:8px">{{ tailored.cover_letter }}</pre>
+  </details>
+  {% endif %}
+  <details>
+    <summary>Diff vs master resume</summary>
+    <pre style="background:var(--card);padding:12px;border-radius:8px;overflow-x:auto">{{ tailored.diff or '(no differences)' }}</pre>
+  </details>
+  {% if (tailored.notes or {}).get('fallback_reason') or (tailored.notes or {}).get('rejected_violations') %}
+  <p class="muted">⚠ LLM output was rejected for breaking the truth contract
+    ({{ (tailored.notes.get('rejected_violations') or ['n/a']) | join('; ') | truncate(120) }})
+    — deterministic reorder-only fallback was used.{{ '' if not (tailored.notes or {}).get('fallback_reason') else ' ' }}
+    {{ (tailored.notes or {}).get('fallback_reason', '') }}</p>
+  {% endif %}
+  {% else %}
+  <p class="muted">
+    Tailor your master resume for this job. Truth contract: only reorder/reword/emphasize —
+    employers, dates, degrees and skills are never invented; every LLM output is machine-validated
+    against your master resume (rejection → one retry → deterministic reorder fallback).
+    {% if not tailored.llm_available %}<br><strong>LLM not configured</strong> — add <code>OPENAI_API_KEY</code> to <code>.env</code>
+    for LLM tailoring; without it, a deterministic reorder-only mode is used (scores = JD skill coverage).
+    {% endif %}
+  </p>
+  <form hx-post="/api/jobs/{{ job.id }}/tailor" hx-swap="none"
+        hx-on::after-request="if(event.detail.successfullySwapped) location.reload()"
+        hx-disabled-elt="button[type=submit]" style="margin-top:10px">
+    <textarea name="jd_text" rows="5" style="width:100%"
+              placeholder="Optional: paste the full job description here. Leave empty to fetch it from the job page automatically."></textarea>
+    <p>
+      <label><input type="checkbox" name="cover_letter" value="true"> Also write a cover letter (LLM only)</label>
+      &nbsp;&nbsp; <button type="submit">Tailor resume for this job</button>
+    </p>
+    <p class="muted">Takes ~15-60 seconds with the LLM. You get before/after scores, a diff, and DOCX/PDF downloads.</p>
+  </form>
+  {% endif %}
+</div>
+<p><a href="/jobs" style="color:var(--accent)">← back to all jobs</a></p>
+{% endblock %}

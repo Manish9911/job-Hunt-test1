@@ -12,6 +12,8 @@ dependencies = [
     "jinja2",
     "httpx",
     "python-docx",
+    "fpdf2",
+    "python-multipart",
     "pdfplumber",
     "playwright",
     "pytest",
