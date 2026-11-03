@@ -39,9 +39,30 @@
     <a href="/" class="{{ 'active' if active in ('overview', 'profile', 'resumes', 'skills', 'experience', 'education', 'answers', 'companies') }}">Overview</a>
     <a href="/jobs" class="{{ 'active' if active == 'jobs' }}">Jobs</a>
     <a href="/applications" class="{{ 'active' if active == 'applications' }}">Applications</a>
+    <span style="margin-left:auto;display:flex;align-items:center">
+      <button class="secondary" id="notif-btn" title="Notifications — the agent alerts you here when it needs you (e.g. a CAPTCHA)"
+              hx-get="/api/notifications/panel" hx-target="#notif-panel" hx-swap="innerHTML"
+              onclick="document.getElementById('notif-panel').style.display =
+                (document.getElementById('notif-panel').style.display === 'none' ? 'block' : 'none')">
+        🔔 <span id="notif-badge" style="margin-left:6px"></span>
+      </button>
+    </span>
   </nav>
+  <div id="notif-panel" style="display:none"></div>
   <main>
     {% block content %}{% endblock %}
   </main>
+  <script>
+    // Poll the unread-notification badge every 5s (plain fetch — no HTMX
+    // trigger-syntax pitfalls).
+    async function pollBadge() {
+      try {
+        const r = await fetch('/api/notifications/badge');
+        document.getElementById('notif-badge').innerHTML = await r.text();
+      } catch (e) { /* server briefly unreachable — retry next tick */ }
+    }
+    pollBadge();
+    setInterval(pollBadge, 5000);
+  </script>
 </body>
 </html>

@@ -220,6 +220,33 @@ class AutoApplyAgent:
         status = result.get("status", "failed")
         self._tally(status)
         self.last_activity = f"{status}: {title}"
+        self._notify_result(db, job, status, result)
+
+    def _notify_result(self, db, job: Job, status: str, result: dict) -> None:
+        """User rule: when the agent can't finish on its own (CAPTCHA above
+        all), raise a flag and notify the user IMMEDIATELY for manual action."""
+        from ..services.notify import notify
+
+        title = f"{job.title} @ {job.company}"
+        if status in ("captcha_manual", "submit_blocked_captcha"):
+            where = ("the form was filled but the SUBMIT button is behind a CAPTCHA"
+                     if status == "submit_blocked_captcha"
+                     else "the form is behind a CAPTCHA — it was not filled")
+            notify(db, "action",
+                   f"CAPTCHA needs you: {job.company}",
+                   f"{title} — {where}. Open the application link and finish it manually.",
+                   link=job.apply_url)
+        elif status == "submitted":
+            notify(db, "info",
+                   f"Applied: {job.company}",
+                   f"{title} — the agent tailored your resume, filled the form and submitted it.",
+                   link=result.get("detail_url"))
+        elif status in ("submit_failed", "manual_required", "failed"):
+            notify(db, "action",
+                   f"Agent stuck: {job.company}",
+                   f"{title} — {status}: {(result.get('error') or status)[:200]} "
+                   "Please review and apply manually if this job matters.",
+                   link=job.apply_url)
 
     def _tally(self, status: str) -> None:
         if status == "submitted":

@@ -137,6 +137,21 @@ class Application(Base):
     action_log: Mapped[list["ActionLog"]] = relationship(back_populates="application")
 
 
+class Notification(Base):
+    """User-facing alert from the agent (CAPTCHA walls, failures, successes)."""
+    __tablename__ = "notifications"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # action = needs the user now | info = FYI
+    kind: Mapped[str] = mapped_column(String(20), default="info")
+    title: Mapped[str] = mapped_column(String(300))
+    detail: Mapped[str] = mapped_column(Text, default="")
+    # external URL (e.g. the employer form) or in-app path
+    link: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
 class ActionLog(Base):
     """Per-field audit trail for one application attempt (the 'log every action' hard rule)."""
     __tablename__ = "action_log"

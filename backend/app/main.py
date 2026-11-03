@@ -65,6 +65,8 @@ def create_app(database_url: str | None = None) -> FastAPI:
 
     from .api import agent as agent_api
     app.include_router(agent_api.router)
+    from .api import notifications as notifications_api
+    app.include_router(notifications_api.router)
     from .services.agent import AutoApplyAgent
     agent_state = AutoApplyAgent()
     agent_state.session_factory = make_session(engine)
