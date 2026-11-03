@@ -415,6 +415,10 @@ def run_application(db, job_id: int, resume_id: int | None = None,
                     notes["adapter"] = adapter.name
                     log("adapter_matched", adapter.name, job.apply_url[:120])
                     _open_application_if_needed(page, log)
+                    # User rule: if the form offers "Autofill from resume",
+                    # upload the resume there and let the ATS fill it.
+                    from .adapters import autofill_from_resume
+                    autofill_from_resume(page, ctx, log)
                     filled = adapter.fill(page, ctx, log, drafter=drafter)
                     notes["filled_fields"] = filled
                     if not filled:

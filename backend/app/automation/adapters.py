@@ -81,6 +81,15 @@ def _visible(el) -> bool:
         return False
 
 
+def _already_filled(el) -> bool:
+    """True when the field already holds a value — e.g. populated by the
+    ATS's 'Autofill from resume' (user rule 2026-11-03: resume data wins)."""
+    try:
+        return bool((el.input_value(timeout=300) or "").strip())
+    except Exception:
+        return False
+
+
 def _fill_text(el, value: str) -> None:
     """Type into an input/textarea (clear first), robust to React-controlled inputs."""
     el.click(timeout=3000)
@@ -126,6 +135,15 @@ def fill_heuristic(page, ctx: ApplicationContext, log: LogFn) -> list[str]:
         if not field:
             log("skipped_field", key[:120], "unrecognized text field — left blank")
             continue
+        # Never clobber a field that's already filled — e.g. by the ATS's
+        # "Autofill from resume" (user rule 2026-11-03): the resume's own
+        # data wins over the profile's.
+        try:
+            if _already_filled(el):
+                log("skipped_field", field, "already filled (resume autofill?) — kept")
+                continue
+        except Exception:
+            pass
         value = ctx_map.get(field, "")
         if not value:
             log("skipped_field", field, "recognized but profile has no value")
@@ -161,6 +179,130 @@ def fill_file_uploads(page, ctx: ApplicationContext, log: LogFn) -> list[str]:
         except Exception as e:
             log("field_error", f"file[{i}]", f"{type(e).__name__}: {e}"[:200])
     return filled
+
+
+_AUTOFILL_CTA_RE = re.compile(
+    r"autofill\s+from\s+(my\s+|the\s+|your\s+)?resume|"
+    r"auto-?fill\s+(my\s+)?resume|"
+    r"import\s+(my\s+)?resume|pre-?fill\s+from\s+resume|fill\s+from\s+resume",
+    re.I)
+
+
+def _nonempty_text_fields(page) -> int:
+    try:
+        els = page.locator(
+            "input[type=text], input[type=email], input[type=tel], "
+            "input[type=url], input:not([type]), textarea")
+        n = 0
+        for i in range(min(els.count(), 40)):
+            try:
+                if (els.nth(i).input_value(timeout=200) or "").strip():
+                    n += 1
+            except Exception:
+                pass
+        return n
+    except Exception:
+        return 0
+
+
+def autofill_from_resume(page, ctx: ApplicationContext, log: LogFn) -> bool:
+    """User rule (2026-11-03): when the form offers 'Autofill from resume',
+    upload the resume THERE and let the ATS populate the form — it's more
+    accurate than field-by-field typing. If no such control/flow exists, do
+    nothing and the normal fill pipeline (profile + stored answers + AI
+    drafter) takes over.
+
+    Returns True when the resume was handed to the ATS's autofill path.
+    """
+    if not ctx.resume_path:
+        return False
+
+    def _has_autofill_control() -> bool:
+        try:
+            for sel in ("button", "a", "[role='button']", "label", "span"):
+                loc = page.locator(sel)
+                for i in range(min(loc.count(), 40)):
+                    el = loc.nth(i)
+                    try:
+                        if not el.is_visible():
+                            continue
+                        text = (el.inner_text(timeout=300) or "").strip()
+                    except Exception:
+                        continue
+                    if text and len(text) < 80 and _AUTOFILL_CTA_RE.search(text):
+                        return True
+        except Exception:
+            pass
+        return False
+
+    before = _nonempty_text_fields(page)
+
+    # Pattern A: a (possibly hidden) file input — uploading triggers the ATS.
+    try:
+        files = page.locator("input[type=file]")
+        if files.count():
+            first = files.nth(0)
+            try:
+                first.evaluate("el => { el.style.display='block'; el.style.visibility='visible'; }")
+            except Exception:
+                pass
+            first.set_input_files(ctx.resume_path, timeout=8000)
+            log("autofill_upload", None,
+                f"resume {ctx.resume_filename} handed to the form's autofill/file input")
+            # Give the ATS time to parse + populate.
+            for _ in range(6):
+                try:
+                    page.wait_for_timeout(2500)
+                except Exception:
+                    break
+                if _nonempty_text_fields(page) > before:
+                    log("autofill_applied", None,
+                        "ATS populated the form from the resume")
+                    return True
+    except Exception as e:
+        log("autofill_upload_failed", None, f"{type(e).__name__}: {str(e)[:120]}")
+
+    # Pattern B: a labeled button that opens a file chooser.
+    if _has_autofill_control():
+        try:
+            with page.expect_file_chooser(timeout=8000) as fc:
+                clicked = False
+                for sel in ("button", "a", "[role='button']"):
+                    loc = page.locator(sel)
+                    for i in range(min(loc.count(), 40)):
+                        el = loc.nth(i)
+                        try:
+                            if not el.is_visible():
+                                continue
+                            text = (el.inner_text(timeout=300) or "").strip()
+                        except Exception:
+                            continue
+                        if text and _AUTOFILL_CTA_RE.search(text):
+                            el.click(timeout=5000)
+                            clicked = True
+                            break
+                    if clicked:
+                        break
+                if not clicked:
+                    raise RuntimeError("autofill control not clickable")
+            fc.value.set_files(ctx.resume_path)
+            log("autofill_upload", None,
+                f"resume {ctx.resume_filename} chosen via the autofill button")
+            for _ in range(6):
+                try:
+                    page.wait_for_timeout(2500)
+                except Exception:
+                    break
+                if _nonempty_text_fields(page) > before:
+                    log("autofill_applied", None,
+                        "ATS populated the form from the resume")
+                    return True
+        except Exception as e:
+            log("autofill_button_failed", None, f"{type(e).__name__}: {str(e)[:120]}")
+
+    log("autofill_unavailable", None,
+        "no working 'Autofill from resume' path — falling back to field-by-field fill")
+    return False
 
 
 def fill_consent(page, ctx: ApplicationContext, log: LogFn) -> list[str]:
@@ -369,6 +511,10 @@ class GreenhouseAdapter(AtsAdapter):
             try:
                 el = page.locator(sel).first
                 if el.count() and _visible(el):
+                    if _already_filled(el):
+                        log("skipped_field", field,
+                            "already filled (resume autofill?) — kept")
+                        continue
                     _fill_text(el, value)
                     filled.append(field)
                     log("filled", field, value[:120])
@@ -406,6 +552,10 @@ class LeverAdapter(AtsAdapter):
             try:
                 el = page.locator(sel).first
                 if el.count() and _visible(el):
+                    if _already_filled(el):
+                        log("skipped_field", field,
+                            "already filled (resume autofill?) — kept")
+                        continue
                     _fill_text(el, value)
                     filled.append(field)
                     log("filled", field, value[:120])
