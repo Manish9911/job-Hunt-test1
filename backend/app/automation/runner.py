@@ -171,6 +171,28 @@ def _auto_submit(page, log) -> tuple[str, str]:
     return "submit_uncertain", "submit clicked — no confirmation page detected, verify with the employer"
 
 
+def _ensure_resume_file(db, resume) -> None:
+    """Materialize a generated (tailored) resume as a real docx.
+
+    Tailored resumes are stored as structured JSON (``content_json``) with an
+    empty ``storage_path``; the ATS adapters need an actual file to attach.
+    """
+    if resume.storage_path:
+        return
+    if not resume.content_json:
+        raise ValueError("resume has no file on disk and no parsed content to render")
+    from ..services.export import export_docx
+
+    structure = json.loads(resume.content_json)
+    out_dir = Path("data") / "resumes"
+    path = out_dir / f"resume_{resume.id}.docx"
+    export_docx(structure, path)
+    resume.storage_path = str(path)
+    if not resume.original_filename or resume.original_filename.startswith("generated"):
+        resume.original_filename = path.name
+    db.commit()
+
+
 def run_application(db, job_id: int, resume_id: int | None = None,
                     dry_run: bool = True, headless: bool = True,
                     nav_timeout_ms: int = 60000,
@@ -197,6 +219,12 @@ def run_application(db, job_id: int, resume_id: int | None = None,
         resume = _resume_for_job(db, job, resume_id)
     except ValueError as e:
         return {"error": str(e), "status": "failed"}
+
+    # Generated (tailored) resumes have no file on disk yet — render one.
+    try:
+        _ensure_resume_file(db, resume)
+    except Exception as e:
+        return {"error": f"could not prepare resume file: {e}", "status": "failed"}
 
     answers = []
     try:

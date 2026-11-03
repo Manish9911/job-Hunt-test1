@@ -15,10 +15,11 @@ def status(request: Request) -> dict:
 
 
 @router.post("/start")
-def start(request: Request) -> dict:
+def start(request: Request, min_score: int = 0) -> dict:
     agent = get_agent(request)
-    started = agent.start()
-    return {"running": agent.is_running, "started": started}
+    started = agent.start(min_score=min_score)
+    return {"running": agent.is_running, "started": started,
+            "min_score": agent.min_score}
 
 
 @router.post("/stop")

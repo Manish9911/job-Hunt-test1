@@ -15,16 +15,22 @@
             hx-on::after-request="location.reload()">⏹ Stop agent</button>
     <span class="badge" style="background:#2ea043">RUNNING</span>
     {% else %}
-    <button hx-post="/api/agent/start" hx-swap="none"
-            hx-on::after-request="location.reload()">▶ Start agent</button>
+    <form hx-post="/api/agent/start" hx-swap="none" hx-on::after-request="location.reload()"
+          style="display:flex;gap:8px;align-items:center">
+      <input type="number" name="min_score" min="0" max="100" value="0"
+             title="Minimum match score to apply to (0 = all matched jobs)"
+             style="width:110px">
+      <button type="submit">▶ Start agent</button>
+    </form>
     <span class="badge">STOPPED</span>
     {% endif %}
     <div class="muted" style="flex:1;min-width:260px">
-      While running: the agent reads each job's JD first — if it says
-      <strong>US citizens only</strong> or <strong>no sponsorship</strong> it rejects the
-      application without touching the form; otherwise it fills it, answers the
-      screening questions and <strong>submits on its own</strong>. No human in the loop
-      (CAPTCHA-gated forms are logged as blocked and skipped — those need you once).
+      While running: for each job the agent <strong>tailors your resume to the JD</strong>,
+      reads the requirements — if the JD says <strong>US citizens only</strong> or
+      <strong>no sponsorship</strong> it rejects the application without touching the form —
+      otherwise it fills it, answers the screening questions and <strong>submits on its own</strong>.
+      No human in the loop (CAPTCHA-gated forms are logged as blocked and skipped — those need you once).
+      The number box sets the minimum match score (0 = apply to every matched job).
     </div>
   </div>
   <div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:10px">

@@ -610,3 +610,37 @@ def test_e2e_auto_submit_never_fires_in_dry_run(app, mock_ats):
         assert "auto_submit_skipped" in actions
     finally:
         db.close()
+
+
+@requires_chromium
+def test_e2e_tailored_resume_materialized_and_attached(app, mock_ats):
+    """Vision step: tailor the resume to the JD, then the application run
+    renders the generated resume to a real docx and attaches it to the form."""
+    from backend.app.services.tailor import tailor_job
+
+    profile_id, job_id = _seed(app, f"{mock_ats}/greenhouse/1",
+                               title="SWE (tailored)", company="TailorCo",
+                               source="greenhouse")
+    db = app.state.SessionLocal()
+    try:
+        res = tailor_job(db, job_id,
+                         jd_text="Senior Java Spring Boot PostgreSQL microservices AWS engineer")
+        tailored_id = res["tailored_resume_id"]
+        job = db.get(Job, job_id)
+        assert job.tailored_resume_id == tailored_id
+        r = db.get(Resume, tailored_id)
+        assert not r.storage_path  # generated: no file yet
+    finally:
+        db.close()
+
+    result = _run(app, job_id)
+    assert result["status"] == "dry_run_completed", result
+    assert "resume_upload[0]" in result["filled_fields"], result["filled_fields"]
+
+    db = app.state.SessionLocal()
+    try:
+        r = db.get(Resume, tailored_id)
+        assert r.storage_path and os.path.exists(r.storage_path)
+        assert r.original_filename.endswith(".docx")
+    finally:
+        db.close()

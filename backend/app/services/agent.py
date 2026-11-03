@@ -52,6 +52,7 @@ class AutoApplyAgent:
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
         self.session_factory = None      # set by create_app
+        self.min_score: int = 0          # skip jobs below this match score (0 = all matched)
         self.last_activity: str | None = None
         self.last_error: str | None = None
         self.stats = {"submitted": 0, "review": 0, "blocked": 0,
@@ -65,10 +66,11 @@ class AutoApplyAgent:
         with self._lock:
             return self._thread is not None and self._thread.is_alive()
 
-    def start(self) -> bool:
+    def start(self, min_score: int = 0) -> bool:
         with self._lock:
             if self.is_running:
                 return False
+            self.min_score = max(0, int(min_score or 0))
             self._stop.clear()
             self._thread = threading.Thread(
                 target=self._loop, name="auto-apply-agent", daemon=True)
@@ -132,6 +134,10 @@ class AutoApplyAgent:
         jobs.sort(key=lambda j: (-(j.match_score if j.match_score is not None else -1),
                                  -j.id))
         for job in jobs:
+            if self.min_score > 0 and (
+                job.match_score is None or job.match_score < self.min_score
+            ):
+                continue
             attempts = (
                 db.query(Application)
                 .filter(Application.job_id == job.id)
@@ -195,6 +201,20 @@ class AutoApplyAgent:
 
         self._event("applying", job,
                     f"applying (auto-submit) — {assessment['note']}")
+
+        # User's vision: tailor the resume to THIS job's JD before filling.
+        # Deterministic (truth-only) when no LLM key is configured.
+        if not job.tailored_resume_id:
+            try:
+                from ..services.tailor import tailor_job
+                tailor_job(db, job.id, jd_text=jd_text, cover_letter=True)
+                db.commit()
+                db.refresh(job)
+                self._event("tailored", job, "resume tailored to this JD before applying")
+            except Exception as e:
+                self._event("tailor_failed", job,
+                            f"tailoring failed ({type(e).__name__}) — applying with master resume")
+
         result = run_application(db, job.id, dry_run=False,
                                  headless=True, auto_submit=True)
         status = result.get("status", "failed")

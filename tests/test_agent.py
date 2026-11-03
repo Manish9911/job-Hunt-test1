@@ -127,19 +127,35 @@ def test_apply_path_submits_and_tallies(db, monkeypatch, agent):
 
     monkeypatch.setattr("backend.app.services.tailor.fetch_jd",
                         lambda job: "We are looking for a senior engineer. No visa talk here.")
+    calls = []
+    monkeypatch.setattr(
+        "backend.app.services.tailor.tailor_job",
+        lambda db, job_id, **kw: calls.append(("tailor", job_id)) or {"tailored_resume_id": 1},
+    )
     monkeypatch.setattr(
         "backend.app.automation.runner.run_application",
-        lambda db, job_id, **kw: {"status": "submitted", "application_id": 1},
+        lambda db, job_id, **kw: calls.append(("run", job_id)) or {"status": "submitted"},
     )
 
     agent._process_job(db, j)
 
     assert agent.stats["submitted"] == 1
-    row = db.query(Application).filter(Application.job_id == j.id).first()
-    # runner was mocked, so no Application row — but the job was gated + counted
+    # tailor must happen BEFORE the application run (user's vision: tailor -> fill -> submit)
+    assert [c[0] for c in calls] == ["tailor", "run"], calls
     assess = json.loads(j.jd_eligibility_json)
     assert assess["decision"] == "apply"
-    assert any(e["kind"] == "applying" for e in agent.events)
+    assert any(e["kind"] == "tailored" for e in agent.events)
+
+
+def test_min_score_filters_candidates(db, agent):
+    _job(db, 1, score=40)
+    hi = _job(db, 2, score=90)
+    agent.min_score = 80
+    assert agent._next_candidate(db) is hi
+    agent.min_score = 95
+    assert agent._next_candidate(db) is None
+    agent.min_score = 0
+    assert agent._next_candidate(db) is hi
 
 
 def test_agent_start_stop_lifecycle(agent):
