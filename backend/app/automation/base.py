@@ -62,6 +62,8 @@ class ApplicationContext:
             location=profile.location or "",
             work_authorization=profile.work_authorization or "",
             sponsorship_needed=bool(getattr(profile, "sponsorship_needed", True)),
+            linkedin=getattr(profile, "linkedin", "") or "",
+            portfolio=getattr(profile, "portfolio", "") or "",
         )
         if resume is not None:
             ctx.resume_path = resume.storage_path or ""

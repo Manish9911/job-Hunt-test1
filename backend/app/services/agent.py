@@ -39,8 +39,8 @@ MAX_EVENTS = 60
 
 _HANDLED_STATUSES = {
     "submitted", "submit_uncertain", "submit_blocked_captcha", "rejected_jd",
-    "dry_run_completed", "ready_for_submission", "captcha_manual",
-    "manual_required", "submit_failed",
+    "rejected_clearance", "dry_run_completed", "ready_for_submission",
+    "captcha_manual", "manual_required", "submit_failed", "failed",
 }
 
 
@@ -241,6 +241,13 @@ class AutoApplyAgent:
                    f"Applied: {job.company}",
                    f"{title} — the agent tailored your resume, filled the form and submitted it.",
                    link=result.get("detail_url"))
+        elif status == "rejected_clearance":
+            notify(db, "info",
+                   f"Skipped (security clearance): {job.company}",
+                   f"{title} — the posting/form requires a security clearance. "
+                   "Auto-skipped per your rule (not authorized for clearance "
+                   "work). Nothing was filled or submitted.",
+                   link=job.apply_url)
         elif status in ("submit_failed", "manual_required", "failed"):
             notify(db, "action",
                    f"Agent stuck: {job.company}",

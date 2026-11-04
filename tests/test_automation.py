@@ -773,3 +773,54 @@ def test_e2e_autofill_from_resume_used_when_offered(app, mock_ats):
         assert "submitted" in actions
     finally:
         db.close()
+
+
+# Form containing a security-clearance question (like Valinor's real form):
+# "Clearance Eligibility" radio buttons. User rule 2026-11-03: if the form
+# asks this, abort the whole application — nothing filled, nothing submitted.
+CLEARANCE_HTML = """
+<html><body><form method="post" action="/submit">
+  <label>First name <input name="fields[first_name]"></label>
+  <label>Email <input name="fields[email]"></label>
+  <label>Phone <input name="fields[phone]"></label>
+  <p>Clearance Eligibility: Do you hold an active U.S. security clearance?</p>
+  <label><input type="radio" name="clearance" value="yes"> Yes</label>
+  <label><input type="radio" name="clearance" value="no"> No</label>
+  <button type="submit">Submit application</button>
+</form></body></html>
+"""
+
+FORMS["/greenhouse/clearance"] = _form_html(CLEARANCE_HTML, "clearance")
+
+
+@requires_chromium
+def test_e2e_clearance_question_aborts_application(app, mock_ats):
+    """User rule (2026-11-03): a form that asks about security clearance must
+    abort the application immediately — the user is not authorized for
+    clearance work and doesn't want time wasted on those postings."""
+    profile_id, job_id = _seed(app, f"{mock_ats}/greenhouse/clearance",
+                               title="SWE (clearance)", company="ClearanceCorp",
+                               source="greenhouse")
+    db = app.state.SessionLocal()
+    try:
+        result = run_application(db, job_id, dry_run=False, auto_submit=True)
+    finally:
+        db.close()
+    assert result["status"] == "rejected_clearance", result
+    assert result["filled_fields"] == [], result
+
+    db = app.state.SessionLocal()
+    try:
+        app_row = db.query(Application).filter_by(job_id=job_id).first()
+        notes = app_row.notes_json or "{}"
+        assert "clearance" in notes, notes
+        rows = db.query(ActionLog).filter_by(application_id=app_row.id).all()
+        actions = {l.action for l in rows}
+        assert "rejected_clearance" in actions, actions
+        assert "submitted" not in actions
+        assert "autofill_upload" not in actions
+    finally:
+        db.close()
+    # Nothing was typed into the form or POSTed to the mock ATS.
+    cap = _captures("clearance")
+    assert cap.get("fields[email]") in (None, ""), cap

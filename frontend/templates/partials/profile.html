@@ -10,6 +10,8 @@
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px">
       <div><label>Work authorization</label><input name="work_authorization" value="{{ profile.work_authorization or '' }}" placeholder="e.g. US work visa (H1B/L1)"></div>
       <div><label>Min salary</label><input name="min_salary" value="{{ profile.min_salary or '' }}" placeholder="e.g. $150k base"></div>
+      <div><label>LinkedIn</label><input name="linkedin" value="{{ profile.linkedin or '' }}" placeholder="https://www.linkedin.com/in/your-profile"></div>
+      <div><label>Portfolio / GitHub</label><input name="portfolio" value="{{ profile.portfolio or '' }}" placeholder="https://github.com/your-profile"></div>
     </div>
     <label>Target roles</label><textarea name="target_roles" rows="2">{{ profile.target_roles or '' }}</textarea>
     <label>Preferred locations (comma separated)</label><input name="locations_csv" value="{{ locations | join(', ') }}">

@@ -81,3 +81,28 @@ def test_rejection_quotes_the_phrase():
     r = assess_jd(jd)
     assert r["decision"] == "reject"
     assert any("US citizens only" in x for x in r["reasons"])
+
+
+def test_security_clearance_rejects():
+    r = assess_jd("This role requires the candidate be eligible to obtain and "
+                  "maintain a U.S. security clearance.")
+    assert r["decision"] == "reject"
+    assert any("clearance_required" in x for x in r["reasons"])
+
+
+def test_active_clearance_rejects():
+    r = assess_jd("Must hold an active TS/SCI clearance and pass background checks.")
+    assert r["decision"] == "reject"
+    assert any("clearance_required" in x for x in r["reasons"])
+
+
+def test_clearance_eligibility_question_rejects():
+    r = assess_jd("Clearance eligibility: Do you hold a valid security clearance?")
+    assert r["decision"] == "reject"
+
+
+def test_benign_clearance_word_applies():
+    # "clearance" outside a security context must NOT trip the gate.
+    r = assess_jd("We run inventory clearance sales in our warehouse. "
+                  "Spring Boot, PostgreSQL, AWS. We sponsor H1B.")
+    assert r["decision"] == "apply"

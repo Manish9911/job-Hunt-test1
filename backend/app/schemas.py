@@ -14,6 +14,8 @@ class ProfileIn(BaseModel):
     # list in JSON bodies, comma-separated string from forms
     locations: list[str] | str = ""
     min_salary: str | None = None
+    linkedin: str | None = None
+    portfolio: str | None = None
 
 
 class SkillIn(BaseModel):

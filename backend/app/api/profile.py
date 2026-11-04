@@ -39,6 +39,8 @@ def profile_to_dict(p: Profile) -> dict:
         "target_roles": p.target_roles,
         "locations": locations,
         "min_salary": p.min_salary,
+        "linkedin": p.linkedin,
+        "portfolio": p.portfolio,
     }
 
 
@@ -63,6 +65,8 @@ def update_profile(
     profile.target_roles = body.target_roles
     profile.locations_json = json.dumps(_as_locations(body.locations))
     profile.min_salary = body.min_salary
+    profile.linkedin = (body.linkedin or "").strip() or None
+    profile.portfolio = (body.portfolio or "").strip() or None
     db.commit()
     db.refresh(profile)
     return profile_to_dict(profile)

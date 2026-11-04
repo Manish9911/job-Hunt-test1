@@ -42,6 +42,8 @@ _EXTRA_COLUMNS = (
     ("jobs", "tailor_notes_json", "TEXT DEFAULT '{}'"),
     ("jobs", "cover_letter_text", "TEXT DEFAULT ''"),
     ("jobs", "jd_eligibility_json", "TEXT DEFAULT '{}'"),
+    ("profiles", "linkedin", "VARCHAR(500)"),
+    ("profiles", "portfolio", "VARCHAR(500)"),
 )
 
 

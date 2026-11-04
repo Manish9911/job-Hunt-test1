@@ -5,6 +5,9 @@ User rule (2026-11-02): before applying, the agent must read the job description
 - JD says **no visa sponsorship** (or equivalent)         -> REJECT, do not apply.
 - JD says **nothing** about citizenship / sponsorship     -> APPLY (user is fine applying).
 - JD explicitly **offers** sponsorship                    -> APPLY (recorded as positive).
+- JD says **security clearance** required/eligible (rule 2026-11-03) -> REJECT —
+  the user is not authorized for clearance work and doesn't want time wasted
+  on those postings.
 
 The check is deterministic regex over the JD text (these are explicit employer
 statements, not judgment calls). Every rejection quotes the exact JD phrase so
@@ -43,9 +46,22 @@ _REJECT_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
         # wordings: "without ... requiring sponsorship" and
         # "not require, now or in the future, sponsorship".
         r"\bwithout now or in the future (?:requiring|needing) (?:us )?(?:work\s+)?(?:visa )?sponsorship\b"
-        r"|\bmust not require (?:us )?(?:work )?sponsorship\b"
+        r"|\bmust not require (?:us )?(?:work\s+)?(?:visa )?sponsorship\b"
         r"|\bnot require,? (?:now or in the future[, ]+|at any time[, ]+)?(?:us )?(?:work\s+)?(?:visa )?sponsorship\b"
         r"|\b(?:now or in the future|at any (?:time|point) in the future)\b.{0,80}\bsponsorship\b",
+        re.I,
+    )),
+    # --- security-clearance language (user rule 2026-11-03: not authorized
+    #     for clearance work — reject before wasting time on the form) ---
+    ("clearance_required", re.compile(
+        r"\bsecurity clearance\b"
+        r"|\bu\.s\. (?:security )?clearance\b"
+        r"|\b(?:top ?secret|secret|ts/sci|ts\+|sci) (?:security )?clearance\b"
+        r"|\b(?:active|current|valid) (?:u\.s\. )?(?:security )?clearance\b"
+        r"|\bclearance (?:eligib\w*|is (?:required|needed|preferred)|required\b|needed\b|requirement\b)\b"
+        r"|\belegible? to obtain (?:and maintain )?(?:a )?(?:u\.s\. )?(?:security )?clearance\b"
+        r"|\brequires? (?:a )?(?:u\.s\. )?(?:security )?clearance\b"
+        r"|\bmust (?:hold|obtain|maintain) (?:a )?(?:u\.s\. )?(?:security )?clearance\b",
         re.I,
     )),
 )

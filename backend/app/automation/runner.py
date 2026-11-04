@@ -147,6 +147,30 @@ def _form_inputs_visible(page) -> bool:
         return False
 
 
+_CLEARANCE_FORM_RE = re.compile(
+    r"security clearance"
+    r"|u\.s\. (?:security )?clearance"
+    r"|clearance eligib\w*"
+    r"|\bdo you (?:hold|have) [\w ]{0,25}clearance\b"
+    r"|\bare you eligible[\w ]{0,25}clearance\b",
+    re.I)
+
+
+def _clearance_question_on_form(page) -> str | None:
+    """User rule (2026-11-03): if the form asks about security clearance,
+    abort immediately — the user is not authorized for clearance work and
+    doesn't want time wasted on those postings. Returns a short quote."""
+    try:
+        body = re.sub(r"\s+", " ", (page.inner_text("body") or ""))
+    except Exception:
+        return None
+    m = _CLEARANCE_FORM_RE.search(body)
+    if not m:
+        return None
+    start = max(0, m.start() - 40)
+    return body[start: min(len(body), m.end() + 60)].strip()
+
+
 def _open_application_if_needed(page, log) -> None:
     """Some ATS URLs are the JOB POSTING page — the form only appears after
     clicking the "Apply for this Job" CTA. Do that step before filling, so
@@ -405,13 +429,24 @@ def run_application(db, job_id: int, resume_id: int | None = None,
                     except Exception:
                         pass
                     raise
-                adapter = detect_adapter(job.apply_url, hint=getattr(job, "source", "") or "")
-                if adapter is None:
+                clearance_hit = _clearance_question_on_form(page)
+                if clearance_hit:
+                    # User rule 2026-11-03: skip clearance jobs immediately —
+                    # nothing is filled, nothing is submitted.
+                    status = "rejected_clearance"
+                    log("rejected_clearance", None,
+                        f"form asks about security clearance: {clearance_hit[:140]} — skipped (user is not authorized for clearance work)")
+                    notes["clearance"] = clearance_hit[:200]
+
+                adapter = (None if clearance_hit
+                           else detect_adapter(job.apply_url, hint=getattr(job, "source", "") or ""))
+                filled = []
+                if adapter is None and not clearance_hit:
                     status = "manual_required"
                     log("adapter_none", None,
                         f"no adapter for {job.apply_url[:120]} — apply manually")
                     notes["adapter"] = None
-                else:
+                elif adapter is not None:
                     notes["adapter"] = adapter.name
                     log("adapter_matched", adapter.name, job.apply_url[:120])
                     _open_application_if_needed(page, log)
@@ -437,7 +472,7 @@ def run_application(db, job_id: int, resume_id: int | None = None,
                 except Exception as e:
                     log("screenshot_error", None, f"{type(e).__name__}"[:120])
 
-                if auto_submit and not dry_run:
+                if auto_submit and not dry_run and not clearance_hit:
                     status, submit_note = _auto_submit(page, log)
                     notes["submit"] = submit_note
                     # Truth guard (Valinor incident): "submitted" requires that

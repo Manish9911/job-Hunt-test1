@@ -26,6 +26,9 @@ class Profile(Base):
     target_roles: Mapped[str | None] = mapped_column(Text, nullable=True)
     locations_json: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON list
     min_salary: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Profile links (user rule 2026-11-03: Overview form fields, auto-filled into ATS forms)
+    linkedin: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    portfolio: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
