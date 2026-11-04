@@ -824,3 +824,56 @@ def test_e2e_clearance_question_aborts_application(app, mock_ats):
     # Nothing was typed into the form or POSTed to the mock ATS.
     cap = _captures("clearance")
     assert cap.get("fields[email]") in (None, ""), cap
+
+
+# Job POSTING page whose form (behind the CTA) asks about security clearance —
+# exactly what Valinor's real Ashby form does: the posting page is clean, the
+# "Clearance Eligibility" question only appears AFTER clicking the CTA.
+POSTING_CLEARANCE_HTML = """
+<html><body>
+<h1>Senior Software Engineer — ClearCorp</h1>
+<p>We are looking for a Java/Spring engineer.</p>
+<button onclick="window.location.href='/greenhouse/posting-clearance/apply'">Apply for this Job</button>
+</body></html>
+"""
+
+FORMS["/greenhouse/posting-clearance"] = POSTING_CLEARANCE_HTML
+FORMS["/greenhouse/posting-clearance/apply"] = _form_html(CLEARANCE_HTML, "posting-clearance")
+
+
+@requires_chromium
+def test_e2e_clearance_question_behind_cta_aborts(app, mock_ats):
+    """User rule (2026-11-04): the clearance question can hide BEHIND the
+    'Apply for this Job' CTA — the pre-CTA check can't see it. The runner
+    must re-check once the form is open and abort before filling anything:
+    no fields filled, nothing submitted, application marked
+    rejected_clearance."""
+    profile_id, job_id = _seed(app, f"{mock_ats}/greenhouse/posting-clearance",
+                               title="SWE (clearance behind CTA)", company="ClearBehindCorp",
+                               source="greenhouse")
+    db = app.state.SessionLocal()
+    try:
+        result = run_application(db, job_id, dry_run=False, auto_submit=True)
+    finally:
+        db.close()
+    assert result["status"] == "rejected_clearance", result
+    assert result["filled_fields"] == [], result
+
+    db = app.state.SessionLocal()
+    try:
+        app_row = db.query(Application).filter_by(job_id=job_id).first()
+        notes = app_row.notes_json or "{}"
+        assert "clearance" in notes, notes
+        rows = db.query(ActionLog).filter_by(application_id=app_row.id).all()
+        actions = {l.action for l in rows}
+        # The CTA WAS clicked (form opened) — then the clearance question was
+        # detected on the form and the run aborted.
+        assert "open_application" in actions, actions
+        assert "application_form_opened" in actions, actions
+        assert "rejected_clearance" in actions, actions
+        assert "submitted" not in actions
+    finally:
+        db.close()
+    # Nothing was typed into the form or POSTed to the mock ATS.
+    cap = _captures("posting-clearance")
+    assert cap.get("fields[email]") in (None, ""), cap

@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from ..db.deps import get_db, get_profile
 from ..db.models import Profile
-from ..schemas import ProfileIn
+from ..schemas import ProfileIn, ProfileLinksIn
 
 router = APIRouter(prefix="/api/profile", tags=["profile"])
 
@@ -58,15 +58,32 @@ def update_profile(
     profile.full_name = body.full_name
     profile.email = body.email
     profile.phone = body.phone
-    profile.location = body.location
     profile.summary = body.summary
     profile.work_authorization = body.work_authorization
     profile.sponsorship_needed = _as_bool(body.sponsorship_needed, default=profile.sponsorship_needed)
     profile.target_roles = body.target_roles
     profile.locations_json = json.dumps(_as_locations(body.locations))
     profile.min_salary = body.min_salary
+    # linkedin / portfolio / location live in the dedicated "Links & location"
+    # column (PATCH /api/profile/links) — the main form must never clobber them.
+    db.commit()
+    db.refresh(profile)
+    return profile_to_dict(profile)
+
+
+@router.patch("/links")
+def update_profile_links(
+    body: ProfileLinksIn,
+    profile: Profile = Depends(get_profile),
+    db: Session = Depends(get_db),
+):
+    """The dedicated Overview column (user rule 2026-11-04): LinkedIn,
+    Portfolio/GitHub and the current location — the single set of values the
+    agent always fills into ATS forms. Only these three fields are touched,
+    so saving the main profile form can never wipe them (or vice versa)."""
     profile.linkedin = (body.linkedin or "").strip() or None
     profile.portfolio = (body.portfolio or "").strip() or None
+    profile.location = (body.location or "").strip() or None
     db.commit()
     db.refresh(profile)
     return profile_to_dict(profile)

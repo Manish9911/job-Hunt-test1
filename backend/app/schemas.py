@@ -14,8 +14,20 @@ class ProfileIn(BaseModel):
     # list in JSON bodies, comma-separated string from forms
     locations: list[str] | str = ""
     min_salary: str | None = None
+    # linkedin / portfolio are edited in the dedicated Overview "Links &
+    # location" card (PATCH /api/profile/links) — kept here for API compat.
     linkedin: str | None = None
     portfolio: str | None = None
+
+
+class ProfileLinksIn(BaseModel):
+    """Dedicated Overview column (user rule 2026-11-04): LinkedIn,
+    Portfolio/GitHub and the current location — the values the agent always
+    fills into ATS forms. Kept together in one card so the user updates them
+    in one obvious place."""
+    linkedin: str | None = None
+    portfolio: str | None = None
+    location: str | None = None
 
 
 class SkillIn(BaseModel):

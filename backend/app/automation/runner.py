@@ -454,10 +454,23 @@ def run_application(db, job_id: int, resume_id: int | None = None,
                     # upload the resume there and let the ATS fill it.
                     from .adapters import autofill_from_resume
                     autofill_from_resume(page, ctx, log)
-                    filled = adapter.fill(page, ctx, log, drafter=drafter)
-                    notes["filled_fields"] = filled
-                    if not filled:
-                        log("fill_warning", None, "no fields were filled — custom form?")
+                    # User rule (2026-11-04): the clearance question can hide
+                    # BEHIND the "Apply for this Job" CTA (Valinor's real form
+                    # does this) — the pre-CTA check can't see it. Re-check
+                    # once the form is open, BEFORE filling anything: if the
+                    # form asks about security clearance, abort — no filling,
+                    # no submitting, no time wasted.
+                    clearance_hit = _clearance_question_on_form(page)
+                    if clearance_hit:
+                        status = "rejected_clearance"
+                        log("rejected_clearance", None,
+                            f"form asks about security clearance: {clearance_hit[:140]} — skipped (user is not authorized for clearance work)")
+                        notes["clearance"] = clearance_hit[:200]
+                    else:
+                        filled = adapter.fill(page, ctx, log, drafter=drafter)
+                        notes["filled_fields"] = filled
+                        if not filled:
+                            log("fill_warning", None, "no fields were filled — custom form?")
                     # Let post-fill network activity settle (form autosave, analytics)
                     try:
                         page.wait_for_load_state("networkidle", timeout=5000)
