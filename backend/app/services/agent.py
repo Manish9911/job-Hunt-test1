@@ -166,7 +166,6 @@ class AutoApplyAgent:
             self.last_error = f"JD fetch failed for {job.id}: {type(e).__name__}"
 
         assessment = assess_jd(jd_text)
-        job.jd_eligibility_json = json.dumps(assessment)
 
         from ..db.models import Profile
         from ..automation.runner import _resume_for_job
@@ -175,6 +174,22 @@ class AutoApplyAgent:
             resume_id = resume.id
         except ValueError:
             resume_id = None
+
+        # Cheap parameter pre-screen, continued: judge the JD's actual stack,
+        # not just the title (user rule 2026-11-05 — companies name roles
+        # differently). Deterministic + token-free: reject only when the JD is
+        # built around 3+ canonical skills the resume has NONE of.
+        if assessment["decision"] == "apply":
+            from ..ingestion.service import load_resume_skills
+            from ..services.eligibility import assess_jd_skills
+            stack = assess_jd_skills(jd_text, load_resume_skills(db))
+            if stack["decision"] == "reject":
+                assessment["decision"] = "reject"
+                assessment["reasons"].extend(stack["reasons"])
+                assessment["note"] = ("JD stack mismatch — application refused "
+                                      "before filling anything")
+
+        job.jd_eligibility_json = json.dumps(assessment)
 
         if assessment["decision"] == "reject":
             if resume_id is None:

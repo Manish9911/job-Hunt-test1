@@ -1,9 +1,11 @@
 {% extends "base.html" %}
 {% block content %}
-{% if show_all %}
-<h1>All jobs <span class="muted">— {{ passing }} matched / {{ total }} total</span> · <a href="/jobs" style="color:var(--accent)">show matched only</a></h1>
+{% if rejected %}
+<h1>Rejected jobs <span class="muted">— {{ rejected_count }} declined by the agent's JD gate (with the quoted reason, so you can check the calls)</span> · <a href="/jobs" style="color:var(--accent)">back to matched</a></h1>
+{% elif show_all %}
+<h1>All jobs <span class="muted">— {{ passing }} matched / {{ total }} total</span> · <a href="/jobs" style="color:var(--accent)">show matched only</a> · <a href="/jobs?rejected=1" style="color:var(--accent)">Rejected ({{ rejected_count }})</a></h1>
 {% else %}
-<h1>Matched jobs <span class="muted">— {{ passing }} pass your filters (sorted by resume match)</span> · <a href="/jobs?all=1" style="color:var(--accent)">show all {{ total }}</a></h1>
+<h1>Matched jobs <span class="muted">— {{ passing }} pass your filters (sorted by resume match)</span> · <a href="/jobs?all=1" style="color:var(--accent)">show all {{ total }}</a> · <a href="/jobs?rejected=1" style="color:var(--accent)">Rejected ({{ rejected_count }})</a></h1>
 {% endif %}
 
 <div class="card" id="agent-card"
@@ -81,6 +83,31 @@
   </details>
 </div>
 <div class="card">
+  {% if rejected %}
+  <table>
+    <tr>
+      <th>Title</th><th>Company</th><th>Location</th>
+      <th>Why rejected</th><th>When</th>
+    </tr>
+    {% for r in rejected_rows %}
+    <tr>
+      <td><a href="/jobs/{{ r.job.id }}" style="color:var(--accent)">{{ r.job.title }}</a></td>
+      <td>{{ r.job.company }}</td>
+      <td class="muted">{{ r.job.location }}</td>
+      <td style="max-width:480px">{{ r.reason }}</td>
+      <td class="muted">{{ r.finished_at.strftime('%Y-%m-%d %H:%M') if r.finished_at else '' }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" class="muted">No rejected jobs yet — the agent's JD gate
+      (visa / sponsorship, experience level, STEM-OPT-only, security clearance,
+      stack mismatch) will land declined jobs here with the quoted reason.</td></tr>
+    {% endfor %}
+  </table>
+  <p class="muted" style="margin-top:10px">
+    Every row here was declined <strong>before anything was filled or submitted</strong>.
+    If you think the agent got a call wrong, tell it and the rule gets fixed.
+  </p>
+  {% else %}
   <table>
     <tr>
       <th>Title</th><th>Company</th><th>Location</th>
@@ -134,9 +161,12 @@
   <p class="muted" style="margin-top:10px">
     Match = how well your <strong>master resume</strong> fits this job (0–100, ranked by it).
     After tailoring = the same score once Phase 3 produces a tailored resume.
-    <strong>Agent apply</strong> = the agent reads the JD (rejects on US-citizens-only / no-sponsorship),
-    fills the form, answers the screening questions and submits — fully hands-off.
+    <strong>Agent apply</strong> = the agent reads the JD first (rejects on US-citizens-only /
+    no-sponsorship, experience far above your level, STEM-OPT-only, security clearance, or a
+    completely different stack — declined jobs land in <a href="/jobs?rejected=1" style="color:var(--accent)">Rejected</a> with the quoted reason),
+    then fills the form, answers the screening questions and submits — fully hands-off.
     Applied column = what happened to that job so far, with the resume that was used.
   </p>
+  {% endif %}
 </div>
 {% endblock %}
