@@ -71,12 +71,16 @@ def _make_docx(path) -> None:
 
 
 def _seed(app, apply_url: str, title: str = "Software Engineer (Java)",
-          company: str = "MockCorp", source: str = "unknown") -> tuple[int, int]:
+          company: str = "MockCorp", source: str = "unknown",
+          phone: str | None = None) -> tuple[int, int]:
     """Create profile + master resume + job. Returns (profile_id, job_id)."""
     Session = app.state.SessionLocal
     db = Session()
     try:
-        profile = Profile(**PROFILE_KW)
+        kw = dict(PROFILE_KW)
+        if phone is not None:
+            kw["phone"] = phone
+        profile = Profile(**kw)
         db.add(profile)
         db.commit()
         db.refresh(profile)
@@ -188,22 +192,52 @@ def test_context_from_profile():
 
 
 def test_check_captcha_patterns():
+    import re as _re
+
     class FakePage:
         def __init__(self, html):
             self._html = html
+            self._body = _re.sub(r"<[^>]+>", " ", html)
 
         def content(self):
             return self._html
 
-    clean = "<html><form><input name='email'></form></html>"
-    check_captcha(FakePage(clean))  # no raise
+        def inner_text(self, _sel):
+            return self._body
+
+        def locator(self, _sel):
+            raise NotImplementedError("fake page has no rendered widgets")
+
+    # A fully rendered page is fine — even if its source references the
+    # recaptcha API (Qualtrics' careers pages do, for their chatbot).
+    check_captcha(FakePage(
+        "<html><body><h1>Software Engineer at Qualtrics</h1>"
+        "<p>We are looking for an engineer to join our data platform team in "
+        "Seattle. You will build and operate large-scale data pipelines, "
+        "services and dashboards that power customer experience products used "
+        "by thousands of companies. Strong Java or Python background, "
+        "experience with cloud platforms, SQL and observability. Hybrid work "
+        "model with competitive salary and benefits, equity and 401k.</p>"
+        "<a href='/apply'>Apply now</a>"
+        "</body></html>"))
+    check_captcha(FakePage(
+        "<html><body><h1>Job posting</h1>"
+        "<p>Real content: we are looking for a software engineer with solid "
+        "experience in Java, Spring and cloud platforms to join our data "
+        "platform team. You will design APIs, keep services healthy and "
+        "reliable, and work with product managers to ship features every "
+        "week. The team values ownership, clear communication and a strong "
+        "bias toward shipping. Salary range is competitive for the level.</p>"
+        "<script src='https://www.google.com/recaptcha/api.js'></script>"
+        "</body></html>"))
 
     for html, label in (
-        ('<div class="g-recaptcha" data-sitekey="abc"></div>', "reCAPTCHA"),
-        ('<script src="https://hcaptcha.com/1/api.js"></script>', "hCaptcha"),
-        ('<div class="cf-turnstile"></div>', "Turnstile"),
-        ("<h1>Just a moment...</h1>", "Cloudflare"),
-        ("<p>Please verify you are human</p>", "human-verification"),
+        ("<h1>Just a moment...</h1>", "challenge text"),
+        ("<p>Please verify you are human</p>", "challenge text"),
+        # Near-empty page + challenge markers in source = interstitial.
+        ('<div class="g-recaptcha" data-sitekey="abc"></div>', "interstitial"),
+        ('<script src="https://hcaptcha.com/1/api.js"></script>', "interstitial"),
+        ("<div class='cf-turnstile'></div>", "interstitial"),
     ):
         with pytest.raises(CaptchaDetected) as ei:
             check_captcha(FakePage(html))
@@ -308,7 +342,7 @@ _CAPTURE_JS = """
 <script>
   document.addEventListener('change', function (e) {
     var el = e.target;
-    if (!el || (el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA')) return;
+    if (!el || (el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA' && el.tagName !== 'SELECT')) return;
     var value;
     if (el.type === 'file') value = el.files && el.files[0] ? el.files[0].name : 'none';
     else if (el.type === 'checkbox' || el.type === 'radio') value = String(el.checked);
@@ -877,3 +911,245 @@ def test_e2e_clearance_question_behind_cta_aborts(app, mock_ats):
     # Nothing was typed into the form or POSTed to the mock ATS.
     cap = _captures("posting-clearance")
     assert cap.get("fields[email]") in (None, ""), cap
+
+
+# ---------------------------------------------------------------------------
+# Multi-step forms (Qualtrics/Avature et al.): "Continue" advances a step;
+# only an explicit final submit ends the application.
+# ---------------------------------------------------------------------------
+MULTISTEP1_HTML = """
+<html><body>
+<form>
+  <label>First name <input name="fields[first_name]"></label>
+  <label>Email <input type="email" name="fields[email]"></label>
+  <button type="submit" onclick="event.preventDefault(); window.location.href='/greenhouse/multistep/2'">Continue</button>
+</form>
+"""
+MULTISTEP2_HTML = """
+<html><body>
+<form method="post" action="/submit">
+  <p>Why are you interested in this role?</p>
+  <textarea name="fields[motivation]"></textarea>
+  <button type="submit">Submit application</button>
+</form>
+"""
+
+FORMS["/greenhouse/multistep/1"] = _form_html(MULTISTEP1_HTML, "multistep1")
+FORMS["/greenhouse/multistep/2"] = _form_html(MULTISTEP2_HTML, "multistep2")
+
+
+@requires_chromium
+def test_e2e_multistep_continue_until_final_submit(app, mock_ats):
+    """Multi-step form: fill step 1, click Continue, fill step 2, and only
+    then submit. 'Continue' (a type=submit button) must never be treated as
+    the final submit."""
+    profile_id, job_id = _seed(app, f"{mock_ats}/greenhouse/multistep/1",
+                               title="SWE (multi-step)", company="MultiStepCorp",
+                               source="greenhouse")
+    db = app.state.SessionLocal()
+    try:
+        result = run_application(db, job_id, dry_run=False, auto_submit=True)
+    finally:
+        db.close()
+    import time; time.sleep(0.8)  # let mock capture POSTs land
+    assert result["status"] == "submitted", result
+    # Step-1 fields were filled before advancing.
+    assert any(f.startswith("first_name") for f in result["filled_fields"]), result["filled_fields"]
+    assert any(f.startswith("email") for f in result["filled_fields"]), result["filled_fields"]
+
+    db = app.state.SessionLocal()
+    try:
+        app_row = db.query(Application).filter_by(job_id=job_id).first()
+        rows = db.query(ActionLog).filter_by(application_id=app_row.id).all()
+        actions = [l.action for l in rows]
+        assert "step_advance" in actions, actions
+        assert "final_step_reached" in actions, actions
+        assert actions.index("step_advance") < actions.index("final_step_reached")
+    finally:
+        db.close()
+    # Step 2 is what actually got POSTed.
+    cap = _captures("multistep2")
+    assert cap.get("fields[motivation]"), cap
+
+
+# Resume upload via a BUTTON that opens a native file chooser (Qualtrics).
+UPLOAD_BTN_HTML = """
+<html><body><form method="post" action="/submit">
+  <label>Email <input type="email" name="fields[email]"></label>
+  <button type="button" id="up">Upload Resume</button>
+  <button type="submit">Submit application</button>
+</form>
+<script>
+  document.getElementById('up').addEventListener('click', function () {
+    var f = document.createElement('input');
+    f.type = 'file';
+    document.body.appendChild(f);
+    f.click();
+  });
+</script>
+</body></html>
+"""
+
+FORMS["/greenhouse/upload-btn"] = _form_html(UPLOAD_BTN_HTML, "upload-btn")
+
+
+@requires_chromium
+def test_e2e_resume_upload_via_button(app, mock_ats):
+    """No visible file input, but an 'Upload Resume' button that opens a file
+    chooser — the resume must be attached through it."""
+    profile_id, job_id = _seed(app, f"{mock_ats}/greenhouse/upload-btn",
+                               title="SWE (upload btn)", company="UploadBtnCorp",
+                               source="greenhouse")
+    db = app.state.SessionLocal()
+    try:
+        result = run_application(db, job_id, dry_run=False, auto_submit=True)
+    finally:
+        db.close()
+    import time; time.sleep(0.8)
+    assert result["status"] == "submitted", result
+    assert "resume_upload[button]" in result["filled_fields"], result["filled_fields"]
+
+    db = app.state.SessionLocal()
+    try:
+        app_row = db.query(Application).filter_by(job_id=job_id).first()
+        rows = db.query(ActionLog).filter_by(application_id=app_row.id).all()
+        actions = {l.action for l in rows}
+        assert "uploaded_file" in actions, actions
+    finally:
+        db.close()
+
+
+# Phone validation: the stored format is rejected, digits-only is accepted.
+PHONE_RETRY_HTML = """
+<html><body><form method="post" action="/submit">
+  <label>Phone <input id="ph" name="fields[phone]"></label>
+  <span class="err" id="pherr" style="display:none">Please enter a valid phone number</span>
+  <button type="submit">Submit application</button>
+</form>
+<script>
+  var ph = document.getElementById('ph');
+  ph.addEventListener('blur', function () {
+    document.getElementById('pherr').style.display = /^\\d{10}$/.test(ph.value) ? 'none' : 'block';
+  });
+</script>
+</body></html>
+"""
+
+FORMS["/greenhouse/phone-retry"] = _form_html(PHONE_RETRY_HTML, "phone-retry")
+
+
+@requires_chromium
+def test_e2e_phone_format_retry_digits_only(app, mock_ats):
+    """Stored phone '+1 555-867-5309' is rejected by a 10-digit validator —
+    the runner retries with US digits-only ('5558675309') after seeing the
+    validation error. Same number, new format."""
+    profile_id, job_id = _seed(app, f"{mock_ats}/greenhouse/phone-retry",
+                               title="SWE (phone fmt)", company="PhoneFmtCorp",
+                               source="greenhouse", phone="+1 555-867-5309")
+    db = app.state.SessionLocal()
+    try:
+        result = run_application(db, job_id, dry_run=False, auto_submit=True)
+    finally:
+        db.close()
+    import time; time.sleep(0.8)
+    assert result["status"] == "submitted", result
+
+    db = app.state.SessionLocal()
+    try:
+        app_row = db.query(Application).filter_by(job_id=job_id).first()
+        rows = db.query(ActionLog).filter_by(application_id=app_row.id).all()
+        actions = {l.action for l in rows}
+        assert "phone_format_retry" in actions, actions
+    finally:
+        db.close()
+    # What actually got POSTed is the accepted 10-digit format.
+    cap = _captures("phone-retry")
+    assert cap.get("fields[phone]") == "5558675309", cap
+
+
+# Qualtrics step-4 style: dropdowns, a select-all checkbox group, a yes/no
+# radio group, and a follow-up text field that must NOT swallow a stored
+# answer meant for a different question (the live-run false positive).
+SCREENING_MIXED_HTML = """
+<html><body><form method="post" action="/submit">
+  <p>Are you of legal age to work in the country in which this position is based?</p>
+  <select name="fields[legal_age]">
+    <option value="">Please select</option>
+    <option value="yes">Yes</option>
+    <option value="no">No</option>
+  </select>
+  <p>Are you now or will you in the future in need of sponsorship?</p>
+  <select name="fields[sponsorship]">
+    <option value="">Please select</option>
+    <option value="yes">Yes</option>
+    <option value="no">No</option>
+  </select>
+  <p>Are you legally authorized to work in the United States?</p>
+  <select name="fields[work_auth]">
+    <option value="">Please select</option>
+    <option value="yes">Yes</option>
+    <option value="yes-sponsor">Yes, but I require sponsorship now or in the future</option>
+    <option value="no">No</option>
+  </select>
+  <fieldset><legend>Where have you seen this company prior to applying? Select all that apply.</legend>
+    <label><input type="checkbox" name="fields[source_1]"> I googled jobs and a role was suggested</label>
+    <label><input type="checkbox" name="fields[source_2]"> I learned about it from a current employee</label>
+    <label><input type="checkbox" name="fields[source_3]"> None of the above</label>
+  </fieldset>
+  <fieldset><legend>Are you related to a current employee of this company?</legend>
+    <label><input type="radio" name="fields[related]" value="yes"> Yes</label>
+    <label><input type="radio" name="fields[related]" value="no"> No</label>
+  </fieldset>
+  <p>If you answered yes to being related to a current employee, please specify name and relationship (N/A if not applicable).</p>
+  <input type="text" name="fields[related_detail]">
+  <button type="submit">Submit application</button>
+</form>
+"""
+
+FORMS["/greenhouse/screening-mix"] = _form_html(SCREENING_MIXED_HTML, "screening-mix")
+
+
+@requires_chromium
+def test_e2e_screening_selects_and_checkbox_groups(app, mock_ats):
+    """Dropdowns and checkbox/radio groups are answered ONLY from stored
+    answers: the sponsorship-aware option is picked for work-authorization,
+    the matching 'seen company' option is ticked, and everything without a
+    stored answer (legal age, related-to-employee, follow-up text field) is
+    left blank — never fabricated."""
+    profile_id, job_id = _seed(app, f"{mock_ats}/greenhouse/screening-mix",
+                               title="SWE (screening)", company="ScreenMixCorp",
+                               source="greenhouse")
+    db = app.state.SessionLocal()
+    try:
+        db.add(CommonAnswer(profile_id=profile_id,
+                            question="Where have you seen this company prior to applying?",
+                            answer="I googled jobs and a role was suggested"))
+        db.add(CommonAnswer(profile_id=profile_id,
+                            question="Are you now or in the future in need of sponsorship?",
+                            answer="Yes — US work-authorization sponsorship is required."))
+        db.commit()
+    finally:
+        db.close()
+    db = app.state.SessionLocal()
+    try:
+        result = run_application(db, job_id, dry_run=False, auto_submit=True)
+    finally:
+        db.close()
+    import time; time.sleep(0.8)
+    assert result["status"] == "submitted", result
+
+    cap = _captures("screening-mix")
+    # work-authorization: stored 'Yes, with H-1B sponsorship.' → sponsored yes
+    assert cap.get("fields[work_auth]") == "yes-sponsor", cap
+    # sponsorship dropdown: stored yes → plain 'Yes' (no sponsor option exists)
+    assert cap.get("fields[sponsorship]") == "yes", cap
+    # no stored answer → left untouched (no fabricated choices)
+    assert "fields[legal_age]" not in cap, cap
+    assert "fields[related]" not in cap, cap
+    # checkbox group: only the option matching the stored answer is ticked
+    assert cap.get("fields[source_1]") == "true", cap
+    assert "fields[source_2]" not in cap, cap
+    assert "fields[source_3]" not in cap, cap
+    # the follow-up text field must NOT swallow the sponsorship answer
+    # (regression: live Qualtrics run filled it with the wrong text)
+    assert "fields[related_detail]" not in cap, cap

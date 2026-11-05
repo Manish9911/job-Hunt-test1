@@ -104,21 +104,63 @@ class AtsAdapter:
 # CAPTCHA detection (never solve — detect and hand off to a human)
 # ---------------------------------------------------------------------------
 
-_CAPTCHA_PATTERNS = [
-    (r"g-recaptcha|google\.com/recaptcha|recaptcha/api", "reCAPTCHA"),
-    (r"h-captcha|hcaptcha\.com", "hCaptcha"),
-    (r"cf-turnstile|challenges\.cloudflare\.com|turnstile", "Cloudflare Turnstile"),
-    (r"challenge-platform|just a moment", "Cloudflare challenge"),
-    (r"are you a robot|verify you are human|confirm you're human", "human-verification prompt"),
+_CHALLENGE_TEXT_RE = re.compile(
+    r"just a moment|are you a robot|verify you are human|"
+    r"confirm you're human|checking your browser|attention required", re.I)
+
+# Rendered challenge widgets (a visible one IS a real block).
+_WIDGET_SELECTORS = [
+    ("iframe[src*='recaptcha'], .g-recaptcha", "reCAPTCHA"),
+    ("iframe[src*='hcaptcha'], #hcaptcha", "hCaptcha"),
+    ("iframe[src*='turnstile'], .cf-turnstile", "Cloudflare Turnstile"),
 ]
+
+_CHALLENGE_HTML_RE = re.compile(
+    r"challenge-platform|cdn-cgi/challenge|g-recaptcha|recaptcha/api|"
+    r"hcaptcha|cf-turnstile|turnstile")
 
 
 def check_captcha(page) -> None:
-    """Raise CaptchaDetected if any known bot-challenge marker is on the page."""
+    """Raise CaptchaDetected when a bot challenge is ACTUALLY present.
+
+    A page whose source merely *references* the recaptcha API (Qualtrics'
+    careers pages do this for their chatbot) is NOT a challenge — flagging
+    it would abandon perfectly reachable forms. A real challenge means:
+    1. visible challenge wording (Cloudflare interstitials, robot checks),
+    2. a rendered + visible challenge widget, or
+    3. a near-empty page whose source carries challenge markers
+       (interstitials replace the content entirely).
+    """
     try:
-        html = (page.content() or "").lower()
+        body = (page.inner_text("body") or "")
     except Exception:
-        return
-    for pattern, label in _CAPTCHA_PATTERNS:
-        if re.search(pattern, html, re.IGNORECASE):
-            raise CaptchaDetected(label)
+        body = ""
+    m = _CHALLENGE_TEXT_RE.search(body)
+    if m:
+        raise CaptchaDetected(f"challenge text on page: {m.group(0)!r}")
+    for sel, label in _WIDGET_SELECTORS:
+        try:
+            loc = page.locator(sel)
+            for i in range(min(loc.count(), 5)):
+                el = loc.nth(i)
+                try:
+                    # A rendered/visible widget OR a configured widget
+                    # (invisible v3-style: empty div carrying data-sitekey)
+                    # is a real block.
+                    if el.is_visible() or el.get_attribute("data-sitekey"):
+                        raise CaptchaDetected(label)
+                except CaptchaDetected:
+                    raise
+                except Exception:
+                    continue
+        except CaptchaDetected:
+            raise
+        except Exception:
+            continue
+    if len(body.strip()) < 200:
+        try:
+            html = (page.content() or "").lower()
+        except Exception:
+            html = ""
+        if _CHALLENGE_HTML_RE.search(html):
+            raise CaptchaDetected("challenge interstitial (sparse page + challenge markers)")
