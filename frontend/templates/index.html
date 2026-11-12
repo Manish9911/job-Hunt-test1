@@ -16,32 +16,66 @@
     <div class="stat"><div class="num">{{ counts.work_history }}</div><div class="muted">roles</div></div>
     <div class="stat"><div class="num">{{ counts.education }}</div><div class="muted">education</div></div>
     <div class="stat"><div class="num">{{ counts.common_answers }}</div><div class="muted">stored answers</div></div>
+    <div class="stat"><div class="num">{{ counts.lessons }}</div><div class="muted">lessons learned</div></div>
     <div class="stat"><div class="num">{{ counts.companies }}</div><div class="muted">companies</div></div>
   </div>
 </div>
 
-<h2 class="section" id="profile-section">Profile</h2>
-{% include "partials/profile.html" %}
+<details class="fold" id="profile-section">
+  <summary class="section"><span>Profile</span><span class="chev" aria-hidden="true"></span></summary>
+  {% include "partials/profile.html" %}
+</details>
 
-<h2 class="section">Resumes</h2>
-{% include "partials/resumes.html" %}
+<details class="fold" id="resumes-section">
+  <summary class="section"><span>Resumes</span><span class="chev" aria-hidden="true"></span></summary>
+  {% include "partials/resumes.html" %}
+</details>
 
-<h2 class="section">Skills</h2>
-{% include "partials/skills.html" %}
+<details class="fold" id="skills-section">
+  <summary class="section"><span>Skills</span><span class="chev" aria-hidden="true"></span></summary>
+  {% include "partials/skills.html" %}
+</details>
 
-<h2 class="section">Experience</h2>
-{% include "partials/experience.html" %}
+<details class="fold" id="experience-section">
+  <summary class="section"><span>Experience</span><span class="chev" aria-hidden="true"></span></summary>
+  {% include "partials/experience.html" %}
+</details>
 
-<h2 class="section">Education</h2>
-{% include "partials/education.html" %}
+<details class="fold" id="education-section">
+  <summary class="section"><span>Education</span><span class="chev" aria-hidden="true"></span></summary>
+  {% include "partials/education.html" %}
+</details>
 
-<h2 class="section">Application answers</h2>
-{% include "partials/answers.html" %}
+<details class="fold" id="answers-section">
+  <summary class="section"><span>Application answers</span><span class="chev" aria-hidden="true"></span></summary>
+  {% include "partials/answers.html" %}
+</details>
 
-<h2 class="section">Companies</h2>
-{% include "partials/companies.html" %}
+<details class="fold" id="lessons-section">
+  <summary class="section"><span>Lessons learned (self-improvement)</span><span class="chev" aria-hidden="true"></span></summary>
+  {% include "partials/lessons.html" %}
+</details>
+
+<details class="fold" id="companies-section">
+  <summary class="section"><span>Companies</span><span class="chev" aria-hidden="true"></span></summary>
+  {% include "partials/companies.html" %}
+</details>
 
 <div class="card">
   <p class="muted">Pipeline: dashboard → job ingestion (Jobs tab) → LLM tailoring (Phase 3) → ATS automation (Phase 4) → orchestration &amp; tracking (Phase 5).</p>
 </div>
+
+<script>
+  // In-page links (e.g. "Profile section below →") open the section they point at.
+  (function () {
+    function openFromHash() {
+      var id = location.hash.replace('#', '');
+      if (!id) return;
+      var el = document.getElementById(id);
+      if (el && el.tagName === 'DETAILS') el.open = true;
+    }
+    openFromHash();
+    window.addEventListener('hashchange', openFromHash);
+  })();
+</script>
 {% endblock %}

@@ -105,9 +105,13 @@ def export_resume(
         raise HTTPException(404, "Resume has no parsed content")
 
     out_dir = request.app.state.data_dir / "exports"
-    safe_name = "".join(c for c in f"{job.company}-{job.title[:40]}" if c.isalnum() or c in "-_ ")
-    safe_name = safe_name.replace(" ", "_")[:60] or "job"
-    filename = f"resume_{kind}_{safe_name}.{fmt}"
+    # Naming (user rule 2026-11-06): "<user> <company> <role>.<fmt>" —
+    # no resume_<kind> prefixes, no underscores or other symbols.
+    from ..services.export import humanized_filename
+
+    filename = humanized_filename(
+        structure.get("name"), job.company, job.title, ext=fmt
+    )
     path = out_dir / filename
 
     if fmt == "docx":

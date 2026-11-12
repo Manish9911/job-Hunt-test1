@@ -30,6 +30,18 @@ class ProfileLinksIn(BaseModel):
     location: str | None = None
 
 
+class ProfilePermissionsIn(BaseModel):
+    """Dedicated agent-permission card (2026-11-09). Kept apart from the main
+    profile PUT for the same reason as ProfileLinksIn: saving the main form
+    must never clobber the permission settings — and these must never clobber
+    the profile.``submission_mode``: 'autonomous' (agent auto-submits) or
+    'approve_each' (agent stages each application, user approves or rejects
+    it first). ``outreach_permitted``: separate gate for cold-email outreach —
+    an application grant never implies email permission."""
+    submission_mode: str = "autonomous"
+    outreach_permitted: bool = False
+
+
 class SkillIn(BaseModel):
     name: str
     category: str = ""

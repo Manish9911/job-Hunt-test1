@@ -10,8 +10,31 @@ router = APIRouter(prefix="/api/agent", tags=["agent"])
 
 
 @router.get("/status")
-def status(request: Request) -> dict:
-    return get_agent(request).status()
+def status(request: Request):
+    st = get_agent(request).status()
+    # The Jobs-page agent card polls this endpoint every 3s via HTMX and
+    # swaps the response into the card — it must be the HTML partial, not
+    # JSON (raw JSON used to wipe the Start/Stop button off the page).
+    # Plain API clients (curl, tests) still get JSON.
+    if request.headers.get("HX-Request"):
+        # The card also shows the permission model (approval mode / outreach
+        # permission) so the user can flip them without leaving the page.
+        perm = {"mode": "autonomous", "outreach": False}
+        try:
+            from ..db.models import Profile
+            db = request.app.state.SessionLocal()
+            try:
+                p = db.query(Profile).first()
+                if p is not None:
+                    perm = {"mode": p.submission_mode or "autonomous",
+                            "outreach": bool(p.outreach_permitted)}
+            finally:
+                db.close()
+        except Exception:
+            pass
+        return request.app.state.templates.TemplateResponse(
+            request, "partials/agent_card.html", {"agent": st, "perm": perm})
+    return st
 
 
 @router.post("/start")

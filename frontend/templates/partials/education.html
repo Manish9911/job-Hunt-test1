@@ -1,5 +1,5 @@
 <div class="card">
-  <form hx-post="/api/education" hx-swap="none" hx-on::after-request="if(event.detail.successfullySwapped) location.reload()">
+  <form data-json="/api/education">
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px">
       <div><label>School</label><input name="school" required></div>
       <div><label>Degree</label><input name="degree" placeholder="e.g. Master of Science"></div>
@@ -19,7 +19,7 @@
       <td>{{ e.degree }}</td>
       <td class="muted">{{ e.field }}</td>
       <td class="muted">{{ e.start_date }} – {{ e.end_date }}</td>
-      <td><button class="secondary" hx-delete="/api/education/{{ e.id }}" hx-swap="none" hx-on::after-request="if(event.detail.successfullySwapped) location.reload()">delete</button></td>
+      <td><button class="secondary" hx-delete="/api/education/{{ e.id }}" hx-swap="none" hx-on::after-request="if(event.detail.successful) location.reload()">delete</button></td>
     </tr>
     {% else %}
     <tr><td colspan="5" class="muted">No education entries yet.</td></tr>

@@ -644,7 +644,7 @@ def test_e2e_applications_page_renders(app, mock_ats, client):
     html = client.get("/applications").text
     assert "Application tracker" in html
     assert "SWE (page)" in html
-    assert "dry-run done" in html
+    assert "staged — your call" in html
 
 
 @requires_chromium

@@ -37,15 +37,67 @@
         </td>
         <td>{{ a.job.company }}</td>
         <td>
-          {% if a.status == 'dry_run_completed' %}<span class="badge">dry-run done</span>
-          {% elif a.status == 'ready_for_submission' %}<span class="badge">ready to submit</span>
+          {% if a.status == 'dry_run_completed' %}<span class="badge">staged — your call</span>
+          {% elif a.status == 'ready_for_submission' %}<span class="badge">staged — your call</span>
+          {% elif a.status == 'submitting' %}<span class="badge" style="background:rgba(88,166,255,.15);color:#58a6ff">submitting…</span>
           {% elif a.status == 'captcha_manual' %}<span class="badge" style="background:rgba(255,180,80,.15);color:#ffb450">CAPTCHA — you</span>
           {% elif a.status == 'manual_required' %}<span class="badge" style="background:rgba(255,120,120,.15);color:#ff8080">manual</span>
+          {% elif a.status == 'rejected_fraud' %}<span class="badge" style="background:rgba(255,120,120,.15);color:#ff8080">fraud screen</span>
+          {% elif a.status == 'flagged_fraud_review' %}<span class="badge" style="background:rgba(255,180,80,.15);color:#ffb450">check legitimacy</span>
+          {% elif a.status == 'rejected_user' %}<span class="badge">rejected by you</span>
+          {% elif a.status == 'submit_blocked_payment' %}<span class="badge" style="background:rgba(255,120,120,.15);color:#ff8080">payment demand</span>
           {% else %}<span class="badge">{{ a.status }}</span>{% endif %}
           {% if a.error %}<div class="muted">{{ a.error }}</div>{% endif %}
+          {% if a.status in ('dry_run_completed', 'ready_for_submission') %}
+          <div style="display:flex;gap:6px;margin-top:6px">
+            <button class="primary" data-json="/api/applications/{{ a.id }}/submit"
+                    data-json-method="POST" data-json-body="{}"
+                    style="padding:2px 10px"
+                    title="Fill in is done — this re-opens the form, checks it once more, and submits">✔ Approve &amp; submit</button>
+            <button class="secondary" data-json="/api/applications/{{ a.id }}/reject"
+                    data-json-method="POST" data-json-body="{}"
+                    style="padding:2px 10px"
+                    title="Drop this application — nothing is submitted">✖ Reject</button>
+          </div>
+          {% endif %}
+          {% if a.status == 'flagged_fraud_review' %}
+          <div style="display:flex;gap:6px;margin-top:6px">
+            <button class="primary" data-json="/api/lessons/applications/{{ a.id }}/apply-anyway"
+                    data-json-method="POST" data-json-body="{}"
+                    style="padding:2px 10px"
+                    title="This employer is legit — save that decision (never re-flagged) and let the agent apply now">✔ Legit — apply anyway</button>
+            <button class="secondary" data-json="/api/lessons/applications/{{ a.id }}/mark-scam"
+                    data-json-method="POST" data-json-body="{}"
+                    style="padding:2px 10px"
+                    title="Save as scam — the agent will hard-reject this domain/company forever">✖ It's a scam</button>
+          </div>
+          {% endif %}
+          {% if a.status == 'submit_blocked_payment' %}
+          <div style="display:flex;gap:6px;margin-top:6px">
+            <button class="secondary" data-json="/api/lessons/applications/{{ a.id }}/mark-scam"
+                    data-json-method="POST" data-json-body="{}"
+                    style="padding:2px 10px"
+                    title="Confirmed — never retry this domain/company">✖ Mark as scam (never retry)</button>
+          </div>
+          {% endif %}
+          {% if a.status == 'skipped_walled' %}
+          <div style="display:flex;gap:6px;margin-top:6px">
+            <button class="primary" data-json="/api/lessons/wall-cleared"
+                    data-json-method="POST"
+                    data-json-body='{{ {"application_id": a.id} | tojson }}'
+                    style="padding:2px 10px"
+                    title="You cleared the CAPTCHA (or will handle it) — the agent will try this board again">Wall cleared — retry</button>
+          </div>
+          {% endif %}
         </td>
         <td>{{ 'dry-run' if a.dry_run else 'submit-mode' }}</td>
-        <td class="muted">{{ a.resume.original_filename if a.resume else '—' }}</td>
+        <td class="muted">
+          {% if a.resume and a.resume.storage_path %}
+            <a href="/api/resumes/{{ a.resume.id }}/download" title="{{ a.resume.original_filename }}">
+              {{ a.resume.original_filename }}
+            </a>
+          {% else %}—{% endif %}
+        </td>
         <td class="muted">{{ a.log_count }} actions</td>
         <td class="muted">{{ a.created_at.strftime('%Y-%m-%d %H:%M') if a.created_at else '—' }}</td>
         <td>

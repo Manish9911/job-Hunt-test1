@@ -1,11 +1,11 @@
 import json
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..db.deps import get_db, get_profile
 from ..db.models import Profile
-from ..schemas import ProfileIn, ProfileLinksIn
+from ..schemas import ProfileIn, ProfileLinksIn, ProfilePermissionsIn
 
 router = APIRouter(prefix="/api/profile", tags=["profile"])
 
@@ -41,6 +41,8 @@ def profile_to_dict(p: Profile) -> dict:
         "min_salary": p.min_salary,
         "linkedin": p.linkedin,
         "portfolio": p.portfolio,
+        "submission_mode": p.submission_mode,
+        "outreach_permitted": bool(p.outreach_permitted),
     }
 
 
@@ -84,6 +86,24 @@ def update_profile_links(
     profile.linkedin = (body.linkedin or "").strip() or None
     profile.portfolio = (body.portfolio or "").strip() or None
     profile.location = (body.location or "").strip() or None
+    db.commit()
+    db.refresh(profile)
+    return profile_to_dict(profile)
+
+
+@router.patch("/permissions")
+def update_profile_permissions(
+    body: ProfilePermissionsIn,
+    profile: Profile = Depends(get_profile),
+    db: Session = Depends(get_db),
+):
+    """The agent-permission card (user rule 2026-11-09). Only the two
+    permission fields are touched, so the main profile form can never reset
+    them (or vice versa)."""
+    if body.submission_mode not in ("autonomous", "approve_each"):
+        raise HTTPException(400, "submission_mode must be 'autonomous' or 'approve_each'")
+    profile.submission_mode = body.submission_mode
+    profile.outreach_permitted = bool(body.outreach_permitted)
     db.commit()
     db.refresh(profile)
     return profile_to_dict(profile)

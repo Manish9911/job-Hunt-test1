@@ -5,7 +5,7 @@
     "current location" questions). Keep the location exactly as it appears on
     your resume — this is the one value the agent uses for every location question.
   </p>
-  <form hx-patch="/api/profile/links" hx-swap="none" hx-on::after-request="if(event.detail.successfullySwapped) location.reload()">
+  <form data-json="/api/profile/links" data-json-method="PATCH">
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px">
       <div><label>LinkedIn</label><input name="linkedin" value="{{ profile.linkedin or '' }}" placeholder="https://www.linkedin.com/in/your-profile"></div>
       <div><label>Portfolio / GitHub</label><input name="portfolio" value="{{ profile.portfolio or '' }}" placeholder="https://github.com/your-profile"></div>
@@ -15,7 +15,7 @@
   </form>
 </div>
 <div class="card">
-  <form hx-put="/api/profile" hx-swap="none" hx-on::after-request="if(event.detail.successfullySwapped) location.reload()">
+  <form data-json="/api/profile" data-json-method="PUT">
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px">
       <div><label>Full name</label><input name="full_name" value="{{ profile.full_name or '' }}"></div>
       <div><label>Email</label><input name="email" value="{{ profile.email or '' }}"></div>
@@ -27,8 +27,8 @@
       <div><label>Min salary</label><input name="min_salary" value="{{ profile.min_salary or '' }}" placeholder="e.g. $150k base"></div>
     </div>
     <label>Target roles</label><textarea name="target_roles" rows="2">{{ profile.target_roles or '' }}</textarea>
-    <label>Preferred locations (comma separated)</label><input name="locations_csv" value="{{ locations | join(', ') }}">
-    <label style="display:flex;align-items:center;gap:8px"><input type="checkbox" name="sponsorship_needed" value="true" style="width:auto" {% if profile.sponsorship_needed %}checked{% endif %}> Sponsorship needed (US)</label>
+    <label>Preferred locations (comma separated)</label><input name="locations" value="{{ locations | join(', ') }}">
+    <label style="display:flex;align-items:center;gap:8px"><input type="hidden" name="sponsorship_needed" value="false"><input type="checkbox" name="sponsorship_needed" value="true" style="width:auto" {% if profile.sponsorship_needed %}checked{% endif %}> Sponsorship needed (US)</label>
     <p><button type="submit">Save profile</button></p>
   </form>
 </div>

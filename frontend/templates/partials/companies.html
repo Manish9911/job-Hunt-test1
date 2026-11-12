@@ -2,13 +2,13 @@
   <h2>Ingestion controls</h2>
   <div style="display:flex;gap:12px;flex-wrap:wrap">
     <button hx-post="/api/ingest/companies" hx-swap="none"
-            hx-on::after-request="if(event.detail.successfullySwapped) location.reload()">
+            hx-on::after-request="if(event.detail.successful) location.reload()">
       1 · Pull company list (hiring-without-whiteboards)</button>
     <button class="secondary" hx-post="/api/ingest/ats?limit=25" hx-swap="none"
-            hx-on::after-request="if(event.detail.successfullySwapped) location.reload()">
+            hx-on::after-request="if(event.detail.successful) location.reload()">
       2 · Discover ATS for next 25 unknown</button>
     <button class="secondary" hx-post="/api/ingest/jobs/companies?limit=25" hx-swap="none"
-            hx-on::after-request="if(event.detail.successfullySwapped) location.reload()">
+            hx-on::after-request="if(event.detail.successful) location.reload()">
       3 · Pull job feeds from detected ATS</button>
   </div>
   <p class="muted" style="margin-top:10px">ATS discovery is polite and resumable — run it as often as you like. Greenhouse/Lever jobs feed directly from their public JSON APIs.</p>

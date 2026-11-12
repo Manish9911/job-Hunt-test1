@@ -95,6 +95,28 @@ def test_next_candidate_retries_failed_up_to_max(db, agent):
     assert agent._next_candidate(db) is None
 
 
+def test_next_candidate_requeues_job_with_old_handled_row(db, agent):
+    """Requeue incident (2026-11-11): a job with an OLD handled row plus a
+    newer 'pending' row (false-positive rejection that got requeued) must be
+    picked up again — the old 'any handled row => skip' logic made such jobs
+    unrunnable while the agent idled on 'no new jobs'."""
+    p = _profile_with_resume(db)
+    r = db.query(Resume).filter(Resume.profile_id == p.id).first()
+    j = _job(db, 1, score=90)
+    _app_row(db, j, "rejected_fraud", r)   # old false-positive row
+    _app_row(db, j, "pending", r)          # requeued
+    assert agent._next_candidate(db) is j
+
+
+def test_next_candidate_still_skips_job_whose_latest_is_handled(db, agent):
+    p = _profile_with_resume(db)
+    r = db.query(Resume).filter(Resume.profile_id == p.id).first()
+    j = _job(db, 1, score=90)
+    _app_row(db, j, "pending", r)
+    _app_row(db, j, "submitted", r)        # newest row is handled -> done
+    assert agent._next_candidate(db) is None
+
+
 def test_reject_path_creates_rejected_jd_row(db, monkeypatch, agent):
     j = _job(db, 1, score=90)
     _profile_with_resume(db)
@@ -145,6 +167,32 @@ def test_apply_path_submits_and_tallies(db, monkeypatch, agent):
     assess = json.loads(j.jd_eligibility_json)
     assert assess["decision"] == "apply"
     assert any(e["kind"] == "tailored" for e in agent.events)
+
+
+def test_walled_board_is_skipped_not_battled(db, agent, monkeypatch):
+    """Wall habit: a board with 3+ CAPTCHA strikes is parked as
+    skipped_walled and the browser runner is never called."""
+    j = _job(db, 1, score=90)
+    _profile_with_resume(db)
+
+    from backend.app.services import learn
+    for _ in range(3):
+        learn.record_outcome(db, j, "captcha_manual")
+
+    monkeypatch.setattr("backend.app.services.tailor.fetch_jd",
+                        lambda job: "senior engineer, no visa talk")
+    called = []
+    monkeypatch.setattr(
+        "backend.app.automation.runner.run_application",
+        lambda db, job_id, **kw: called.append(job_id) or {"status": "submitted"},
+    )
+
+    agent._process_job(db, j)
+
+    assert called == []                      # browser never opened
+    db.expire_all()
+    rows = db.query(Application).filter(Application.job_id == j.id).all()
+    assert rows and rows[0].status == "skipped_walled"
 
 
 def test_min_score_filters_candidates(db, agent):

@@ -264,6 +264,22 @@ def _clearance_question_on_form(page) -> str | None:
     return body[start: min(len(body), m.end() + 60)].strip()
 
 
+# User rule (2026-11-09, job-apply-agent safety model): NEVER pay a fee. A
+# legitimate application form never asks for card details or money. Checked
+# on the OPEN form (not just the JD) right before filling: a hit aborts the
+# run — nothing is typed, nothing is submitted. The regex lives in
+# services.fraud so the detector has a single home.
+from ..services.fraud import scan_payment_in_text
+
+
+def _payment_question_on_form(page) -> str | None:
+    try:
+        body = page.inner_text("body") or ""
+    except Exception:
+        return None
+    return scan_payment_in_text(body)
+
+
 def _open_application_if_needed(page, log) -> bool:
     """Some ATS URLs are the JOB POSTING page — the form only appears after
     clicking the "Apply now" / "Apply for this Job" CTA. Do that step before
@@ -445,25 +461,33 @@ def _auto_submit(page, log) -> tuple[str, str]:
     return "submit_uncertain", "submit clicked — no confirmation page detected, verify with the employer"
 
 
-def _ensure_resume_file(db, resume) -> None:
+def _ensure_resume_file(db, resume, job=None) -> None:
     """Materialize a generated (tailored) resume as a real docx.
 
     Tailored resumes are stored as structured JSON (``content_json``) with an
     empty ``storage_path``; the ATS adapters need an actual file to attach.
+
+    Naming (user rule 2026-11-06): "<user> <company> <role>.docx" — no
+    ``resume_<id>`` numbers, no underscores/symbols.
     """
     if resume.storage_path:
         return
     if not resume.content_json:
         raise ValueError("resume has no file on disk and no parsed content to render")
-    from ..services.export import export_docx
+    from ..services.export import export_docx, humanized_filename
 
     structure = json.loads(resume.content_json)
     out_dir = Path("data") / "resumes"
-    path = out_dir / f"resume_{resume.id}.docx"
+    filename = humanized_filename(
+        structure.get("name"),
+        getattr(job, "company", None),
+        getattr(job, "title", None),
+        ext="docx",
+    )
+    path = out_dir / filename
     export_docx(structure, path)
     resume.storage_path = str(path)
-    if not resume.original_filename or resume.original_filename.startswith("generated"):
-        resume.original_filename = path.name
+    resume.original_filename = filename
     db.commit()
 
 
@@ -553,7 +577,8 @@ def _fill_all_steps(page, adapter, ctx, log, drafter=None) -> list[str]:
 def run_application(db, job_id: int, resume_id: int | None = None,
                     dry_run: bool = True, headless: bool = True,
                     nav_timeout_ms: int = 60000,
-                    auto_submit: bool = False) -> dict:
+                    auto_submit: bool = False,
+                    existing_application_id: int | None = None) -> dict:
     """Run one application attempt. Synchronous — call from a thread.
 
     ``auto_submit=True`` (used by the auto-apply agent) makes the runner click
@@ -579,7 +604,7 @@ def run_application(db, job_id: int, resume_id: int | None = None,
 
     # Generated (tailored) resumes have no file on disk yet — render one.
     try:
-        _ensure_resume_file(db, resume)
+        _ensure_resume_file(db, resume, job)
     except Exception as e:
         return {"error": f"could not prepare resume file: {e}", "status": "failed"}
 
@@ -593,9 +618,18 @@ def run_application(db, job_id: int, resume_id: int | None = None,
         pass
     ctx = build_context(db, profile, resume, answers)
 
-    app = Application(job_id=job.id, resume_id=resume.id, dry_run=bool(dry_run),
-                      status="pending", created_at=datetime.utcnow())
-    db.add(app)
+    if existing_application_id is not None:
+        # Approval flow (2026-11-09): the staged row becomes the real attempt,
+        # so one job keeps one row: staged -> submitting -> submitted.
+        app = db.get(Application, existing_application_id)
+        if app is None or app.job_id != job.id:
+            raise ValueError("existing application row does not belong to this job")
+        app.status = "submitting"
+        app.dry_run = bool(dry_run)
+    else:
+        app = Application(job_id=job.id, resume_id=resume.id, dry_run=bool(dry_run),
+                          status="pending", created_at=datetime.utcnow())
+        db.add(app)
     db.commit()
     db.refresh(app)
     app_id = app.id
@@ -689,11 +723,20 @@ def run_application(db, job_id: int, resume_id: int | None = None,
                         f"form asks about security clearance: {clearance_hit[:140]} — skipped (user is not authorized for clearance work)")
                     notes["clearance"] = clearance_hit[:200]
 
-                adapter = (None if clearance_hit
+                # Never-pays-a-fee rule (2026-11-09): check the landing page
+                # too, before any CTA/form work.
+                payment_hit = None if clearance_hit else _payment_question_on_form(page)
+                if payment_hit:
+                    status = "submit_blocked_payment"
+                    log("submit_blocked_payment", None,
+                        f"page demands payment: {payment_hit[:140]} — ABORTED (hard rule: never pay a fee; nothing filled or submitted)")
+                    notes["payment"] = payment_hit[:200]
+
+                adapter = (None if (clearance_hit or payment_hit)
                            else detect_adapter(job.apply_url, hint=getattr(job, "source", "") or ""))
                 filled = []
                 form_ready = True
-                if adapter is None and not clearance_hit:
+                if adapter is None and not clearance_hit and not payment_hit:
                     status = "manual_required"
                     log("adapter_none", None,
                         f"no adapter for {job.apply_url[:120]} — apply manually")
@@ -718,11 +761,19 @@ def run_application(db, job_id: int, resume_id: int | None = None,
                     # form asks about security clearance, abort — no filling,
                     # no submitting, no time wasted.
                     clearance_hit = _clearance_question_on_form(page)
+                    # Never-pays-a-fee rule: checked on the open form before
+                    # a single field is typed (2026-11-09).
+                    payment_hit = None if clearance_hit else _payment_question_on_form(page)
                     if clearance_hit:
                         status = "rejected_clearance"
                         log("rejected_clearance", None,
                             f"form asks about security clearance: {clearance_hit[:140]} — skipped (user is not authorized for clearance work)")
                         notes["clearance"] = clearance_hit[:200]
+                    elif payment_hit:
+                        status = "submit_blocked_payment"
+                        log("submit_blocked_payment", None,
+                            f"form demands payment: {payment_hit[:140]} — ABORTED (hard rule: never pay a fee; nothing filled or submitted)")
+                        notes["payment"] = payment_hit[:200]
                     elif not form_ready:
                         pass  # CTA could not be opened — nothing to fill (logged above)
                     else:
@@ -744,7 +795,9 @@ def run_application(db, job_id: int, resume_id: int | None = None,
                 except Exception as e:
                     log("screenshot_error", None, f"{type(e).__name__}"[:120])
 
-                if auto_submit and not dry_run and not clearance_hit and form_ready:
+                if payment_hit and not form_ready:
+                    pass  # payment demand on the form — already aborted above
+                elif auto_submit and not dry_run and not clearance_hit and not payment_hit and form_ready:
                     status, submit_note = _auto_submit(page, log)
                     notes["submit"] = submit_note
                     # Truth guard (Valinor incident): "submitted" requires that

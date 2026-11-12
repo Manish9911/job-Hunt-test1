@@ -1,3 +1,5 @@
+from datetime import timezone
+
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
@@ -6,6 +8,7 @@ from .db.deps import get_db, get_profile
 from .db.models import (
     ActionLog,
     Application,
+    Lesson,
     CommonAnswer,
     Company,
     Education,
@@ -46,6 +49,7 @@ def index(
     )
     pid = profile.id
     counts = {
+        "lessons": db.query(Lesson).count(),
         "resumes": db.query(Resume).filter(Resume.profile_id == pid).count(),
         "skills": db.query(Skill).filter(Skill.profile_id == pid).count(),
         "work_history": db.query(WorkHistory).filter(WorkHistory.profile_id == pid).count(),
@@ -69,6 +73,8 @@ def index(
         .order_by(CommonAnswer.category, CommonAnswer.id).all()
     )
     companies = db.query(Company).order_by(Company.name).all()
+    lessons = db.query(Lesson).order_by(Lesson.updated_at.desc(),
+                                        Lesson.id.desc()).limit(200).all()
     by_region: dict[str, int] = {}
     by_ats: dict[str, int] = {}
     for c in companies:
@@ -80,7 +86,7 @@ def index(
             "overview",
             profile=profile, master=master, counts=counts, locations=locations,
             resumes=resumes, skills=skills, history=history, education=education,
-            answers=answers, companies=companies,
+            answers=answers, companies=companies, lessons=lessons,
             by_region=by_region, by_ats=by_ats,
         ),
     )
@@ -207,7 +213,17 @@ def jobs_page(
             "reason": reason,
             "finished_at": app.finished_at,
         })
-    rejected_rows.sort(key=lambda r: (r["finished_at"] or 0, r["job"].id), reverse=True)
+    # finished_at values are a mix of naive (app-written) and tz-aware
+    # (batch-written) datetimes — comparing them directly raises TypeError.
+    # Normalize to UTC ISO strings (lexicographic == chronological in UTC).
+    def _ts(dt):
+        if dt is None:
+            return ""
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).isoformat()
+
+    rejected_rows.sort(key=lambda r: (_ts(r["finished_at"]), r["job"].id), reverse=True)
     rejected_count = len(rejected_rows)
 
     query = db.query(Job)
