@@ -31,6 +31,24 @@
     details summary { cursor:pointer; color:var(--muted); font-size:13px; }
     ul { margin:6px 0 10px; padding-left:20px; }
     h2.section { margin:28px 0 12px; color:var(--fg); font-size:17px; border-bottom:1px solid var(--border); padding-bottom:6px; }
+    /* Collapsible Overview sections — click the header (or its down-arrow) */
+    details.fold { margin:28px 0 0; }
+    details.fold > summary.section {
+      display:flex; align-items:center; justify-content:space-between; gap:12px;
+      list-style:none; cursor:pointer; user-select:none;
+      color:var(--fg); font-size:17px; border-bottom:1px solid var(--border); padding-bottom:6px;
+    }
+    details.fold > summary.section::-webkit-details-marker { display:none; }
+    details.fold > summary.section .chev {
+      width:9px; height:9px; flex:0 0 auto; margin-top:-3px;
+      border-right:2px solid var(--muted); border-bottom:2px solid var(--muted);
+      transform:rotate(45deg);   /* points down */
+      transition:transform .15s ease, border-color .15s ease;
+    }
+    details.fold > summary.section:hover { color:var(--accent); }
+    details.fold > summary.section:hover .chev { border-color:var(--accent); }
+    details.fold[open] > summary.section .chev { transform:rotate(225deg); margin-top:3px; }
+    details.fold > *:first-child { margin-top:12px; }
   </style>
 </head>
 <body>
@@ -63,6 +81,135 @@
     }
     pollBadge();
     setInterval(pollBadge, 5000);
+  </script>
+  <script>
+    // 20-row pagination for long tables (user request 2026-11-09: "keep the
+    // filters to 20 rows, you can change the page"). Any table whose body has
+    // more than 20 rows gets a pager bar right below it: Prev / Page x of y /
+    // Next / jump-to-page input / total row count. Pure DOM (no backend
+    // change), so it works on every page: Overview sections, Jobs list,
+    // Applications.
+    (function () {
+      var PER = 20;
+      document.querySelectorAll('table').forEach(function (table) {
+        var body = table.tBodies[0];
+        if (!body) return;
+        // Data rows only — some tables keep their header <tr><th> inside
+        // <tbody>; it must stay visible on every page and not count toward
+        // the 20.
+        var rows = Array.prototype.slice.call(body.rows).filter(function (r) {
+          return !r.querySelector('th');
+        });
+        if (rows.length <= PER) return;
+        var pages = Math.ceil(rows.length / PER);
+        var page = 1;
+
+        var bar = document.createElement('div');
+        bar.className = 'pager';
+        bar.style.cssText = 'margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap';
+        bar.innerHTML =
+          '<button type="button" class="secondary pger-prev" style="padding:4px 10px">‹ Prev</button>' +
+          '<span class="muted pger-label" style="min-width:90px;text-align:center"></span>' +
+          '<button type="button" class="secondary pger-next" style="padding:4px 10px">Next ›</button>' +
+          '<input type="number" class="pger-jump" min="1" max="' + pages + '" value="1" ' +
+            'title="Jump to page" style="width:70px;padding:4px 8px"> ' +
+          '<span class="muted">' + rows.length + ' rows total</span>';
+        table.insertAdjacentElement('afterend', bar);
+
+        var prev = bar.querySelector('.pger-prev');
+        var next = bar.querySelector('.pger-next');
+        var label = bar.querySelector('.pger-label');
+        var jump = bar.querySelector('.pger-jump');
+
+        function render() {
+          rows.forEach(function (r, i) {
+            r.style.display = (i >= (page - 1) * PER && i < page * PER) ? '' : 'none';
+          });
+          label.textContent = 'Page ' + page + ' / ' + pages;
+          prev.disabled = (page === 1);
+          next.disabled = (page === pages);
+          if (document.activeElement !== jump) jump.value = page;
+        }
+        prev.addEventListener('click', function () { if (page > 1) { page--; render(); } });
+        next.addEventListener('click', function () { if (page < pages) { page++; render(); } });
+        jump.addEventListener('change', function () {
+          var p = parseInt(jump.value, 10);
+          if (p >= 1 && p <= pages) { page = p; render(); }
+        });
+        render();
+      });
+    })();
+  </script>
+  <script>
+    // JSON form submitter. The API takes JSON bodies, but the bundled HTMX
+    // (1.9.12) can only serialize forms as urlencoded/multipart —
+    // hx-encoding="json" is silently ignored, which 422'd every save button
+    // (diagnosed 2026-11-09). Forms with data-json submit via fetch as JSON
+    // instead and reload on success / alert on failure.
+    document.querySelectorAll('form[data-json]').forEach(function (f) {
+      ['hx-post', 'hx-put', 'hx-patch', 'hx-encoding', 'hx-headers', 'hx-swap'].forEach(function (a) {
+        f.removeAttribute(a);
+      });
+      f.removeAttribute('hx-on::after-request');
+      f.addEventListener('submit', function (e) {
+        e.preventDefault();
+        var url = f.dataset.json;
+        var data = {};
+        new FormData(f).forEach(function (v, k) { data[k] = v; });
+        if (f.dataset.jsonExtra) {
+          try { Object.assign(data, JSON.parse(f.dataset.jsonExtra)); } catch (_) {}
+        }
+        // Some endpoints take fields as query params (agent start: min_score)
+        var qi = f.dataset.jsonQueryInput;
+        if (qi) {
+          var el = f.querySelector('[name="' + qi + '"]');
+          var v = el ? (el.value || '0').toString() : '0';
+          if (/^\d+$/.test(v)) url = url + '?' + qi + '=' + v;
+          delete data[qi];
+        }
+        var btn = f.querySelector('button[type=submit]');
+        if (btn) btn.disabled = true;
+        fetch(url, {
+          method: f.dataset.jsonMethod || 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(data)
+        }).then(function (res) {
+          if (res.ok) { location.reload(); }
+          else {
+            if (btn) btn.disabled = false;
+            res.json().then(function (j) {
+              alert('Save failed (HTTP ' + res.status + '): ' +
+                    (typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail || j)));
+            }).catch(function () { alert('Save failed (HTTP ' + res.status + ')'); });
+          }
+        }).catch(function (err) {
+          if (btn) btn.disabled = false;
+          alert('Save failed: ' + err);
+        });
+      });
+    });
+    // One-shot JSON buttons (not inside a form) — e.g. "Re-tailor"
+    document.querySelectorAll('button[data-json]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        b.disabled = true;
+        var data = {};
+        if (b.dataset.jsonBody) { try { data = JSON.parse(b.dataset.jsonBody); } catch (_) {} }
+        fetch(b.dataset.json, {
+          method: b.dataset.jsonMethod || 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(data)
+        }).then(function (res) {
+          if (res.ok) { location.reload(); }
+          else {
+            b.disabled = false;
+            res.json().then(function (j) {
+              alert('Request failed (HTTP ' + res.status + '): ' +
+                    (typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail || j)));
+            }).catch(function () { alert('Request failed (HTTP ' + res.status + ')'); });
+          }
+        }).catch(function (err) { b.disabled = false; alert('Request failed: ' + err); });
+      });
+    });
   </script>
 </body>
 </html>

@@ -55,9 +55,8 @@
   <div style="display:flex;gap:12px;flex-wrap:wrap;margin:10px 0">
     <a href="{{ tailored.exports.docx }}" style="display:inline-block;background:var(--accent);color:#fff;padding:8px 16px;border-radius:8px;text-decoration:none">Download tailored DOCX</a>
     <a href="{{ tailored.exports.pdf }}" style="display:inline-block;background:var(--accent);color:#fff;padding:8px 16px;border-radius:8px;text-decoration:none">Download tailored PDF</a>
-    <button class="secondary" hx-post="/api/jobs/{{ job.id }}/tailor" hx-swap="none"
-            hx-vals='{"jd_text": null, "cover_letter": false}'
-            hx-on::after-request="if(event.detail.successfullySwapped) location.reload()">Re-tailor</button>
+    <button class="secondary" data-json="/api/jobs/{{ job.id }}/tailor"
+            data-json-body='{"jd_text": null, "cover_letter": false}'>Re-tailor</button>
   </div>
   {% if tailored.cover_letter %}
   <details>
@@ -84,9 +83,7 @@
     for LLM tailoring; without it, a deterministic reorder-only mode is used (scores = JD skill coverage).
     {% endif %}
   </p>
-  <form hx-post="/api/jobs/{{ job.id }}/tailor" hx-swap="none"
-        hx-on::after-request="if(event.detail.successfullySwapped) location.reload()"
-        hx-disabled-elt="button[type=submit]" style="margin-top:10px">
+  <form data-json="/api/jobs/{{ job.id }}/tailor" style="margin-top:10px">
     <textarea name="jd_text" rows="5" style="width:100%"
               placeholder="Optional: paste the full job description here. Leave empty to fetch it from the job page automatically."></textarea>
     <p>
@@ -107,10 +104,7 @@
     Uses the tailored resume for this job if available, else your master resume.
   </p>
   {% if job.apply_url %}
-  <form hx-post="/api/jobs/{{ job.id }}/apply" hx-swap="none" hx-encoding="json"
-        hx-headers='{"Content-Type":"application/json"}'
-        hx-on::after-request="if(event.detail.successfullySwapped) location.reload()"
-        hx-disabled-elt="button[type=submit]" style="margin-top:10px">
+  <form data-json="/api/jobs/{{ job.id }}/apply" style="margin-top:10px">
     <input type="hidden" name="dry_run" value="true">
     <p>
       <button type="submit" id="apply-dryrun">Run dry-run application (10–60s)</button>

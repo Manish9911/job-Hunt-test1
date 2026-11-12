@@ -1,79 +1,37 @@
 {% extends "base.html" %}
 {% block content %}
-{% if show_all %}
-<h1>All jobs <span class="muted">— {{ passing }} matched / {{ total }} total</span> · <a href="/jobs" style="color:var(--accent)">show matched only</a></h1>
+{% if rejected %}
+<h1>Rejected jobs <span class="muted">— {{ rejected_count }} declined by the agent's JD gate (with the quoted reason, so you can check the calls)</span> · <a href="/jobs" style="color:var(--accent)">back to matched</a></h1>
+{% elif show_all %}
+<h1>All jobs <span class="muted">— {{ passing }} matched / {{ total }} total</span> · <a href="/jobs" style="color:var(--accent)">show matched only</a> · <a href="/jobs?rejected=1" style="color:var(--accent)">Rejected ({{ rejected_count }})</a></h1>
 {% else %}
-<h1>Matched jobs <span class="muted">— {{ passing }} pass your filters (sorted by resume match)</span> · <a href="/jobs?all=1" style="color:var(--accent)">show all {{ total }}</a></h1>
+<h1>Matched jobs <span class="muted">— {{ passing }} pass your filters (sorted by resume match)</span> · <a href="/jobs?all=1" style="color:var(--accent)">show all {{ total }}</a> · <a href="/jobs?rejected=1" style="color:var(--accent)">Rejected ({{ rejected_count }})</a></h1>
 {% endif %}
 
 <div class="card" id="agent-card"
      hx-get="/api/agent/status" hx-trigger="every 3s" hx-swap="innerHTML">
-  <h2>Auto-Apply Agent</h2>
-  <div style="display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap">
-    {% if agent.running %}
-    <button class="secondary" hx-post="/api/agent/stop" hx-swap="none"
-            hx-on::after-request="location.reload()">⏹ Stop agent</button>
-    <span class="badge" style="background:#2ea043">RUNNING</span>
-    {% else %}
-    <form hx-post="/api/agent/start" hx-swap="none" hx-on::after-request="location.reload()"
-          style="display:flex;gap:8px;align-items:center">
-      <input type="number" name="min_score" min="0" max="100" value="0"
-             title="Minimum match score to apply to (0 = all matched jobs)"
-             style="width:110px">
-      <button type="submit">▶ Start agent</button>
-    </form>
-    <span class="badge">STOPPED</span>
-    {% endif %}
-    <div class="muted" style="flex:1;min-width:260px">
-      While running: for each job the agent <strong>tailors your resume to the JD</strong>,
-      reads the requirements — if the JD says <strong>US citizens only</strong> or
-      <strong>no sponsorship</strong> it rejects the application without touching the form —
-      otherwise it fills it, answers the screening questions and <strong>submits on its own</strong>.
-      No human in the loop (CAPTCHA-gated forms are logged as blocked and skipped — those need you once).
-      The number box sets the minimum match score (0 = apply to every matched job).
-    </div>
-  </div>
-  <div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:10px">
-    <span class="muted">submitted: <strong>{{ agent.stats.submitted }}</strong></span>
-    <span class="muted">needs review: <strong>{{ agent.stats.review }}</strong></span>
-    <span class="muted">blocked: <strong>{{ agent.stats.blocked }}</strong></span>
-    <span class="muted">rejected by JD gate: <strong>{{ agent.stats.rejected }}</strong></span>
-    <span class="muted">failed: <strong>{{ agent.stats.failed }}</strong></span>
-  </div>
-  {% if agent.last_activity %}
-  <p class="muted" style="margin-top:8px">Last: {{ agent.last_activity }}</p>
-  {% endif %}
-  {% if agent.events %}
-  <details style="margin-top:8px"><summary>Activity feed</summary>
-    <ul>
-      {% for ev in agent.events %}
-      <li class="muted">{{ ev.time }} · <strong>{{ ev.kind }}</strong>{% if ev.job %} · {{ ev.job }}{% endif %} — {{ ev.text }}</li>
-      {% endfor %}
-    </ul>
-  </details>
-  {% endif %}
+  {% include "partials/agent_card.html" %}
 </div>
 
 <div class="card">
   <h2>Ingestion controls</h2>
   <div style="display:flex;gap:12px;flex-wrap:wrap">
     <button hx-post="/api/ingest/jobs/hiring-cafe" hx-swap="none"
-            hx-on::after-request="if(event.detail.successfullySwapped) location.reload()">
+            hx-on::after-request="if(event.detail.successful) location.reload()">
       Pull from hiring.cafe (US latest + visa-sponsorship + remote)</button>
     <button hx-post="/api/ingest/jobs/abstractvc" hx-swap="none"
-            hx-on::after-request="if(event.detail.successfullySwapped) location.reload()">
+            hx-on::after-request="if(event.detail.successful) location.reload()">
       Pull from AbstractVC (software-engineer roles, ~400 jobs)</button>
     <button class="secondary" hx-post="/api/ingest/jobs/refilter" hx-swap="none"
-            hx-on::after-request="if(event.detail.successfullySwapped) location.reload()">
+            hx-on::after-request="if(event.detail.successful) location.reload()">
       Re-run filters</button>
     <button class="secondary" hx-post="/api/ingest/jobs/score" hx-swap="none"
-            hx-on::after-request="if(event.detail.successfullySwapped) location.reload()">
+            hx-on::after-request="if(event.detail.successful) location.reload()">
       Re-score matches vs my resume</button>
   </div>
   <details style="margin-top:12px">
     <summary>Manual fallback — paste hiring.cafe page HTML (if the site blocks automated requests)</summary>
-    <form hx-post="/api/ingest/jobs/hiring-cafe/manual" hx-swap="none"
-          hx-on::after-request="if(event.detail.successfullySwapped) location.reload()" style="margin-top:10px">
+    <form data-json="/api/ingest/jobs/hiring-cafe/manual" style="margin-top:10px">
       <textarea name="html" rows="6" placeholder="View page source in your browser, copy everything, paste here" style="width:100%"></textarea>
       <p><button type="submit">Parse pasted page</button></p>
     </form>
@@ -81,6 +39,31 @@
   </details>
 </div>
 <div class="card">
+  {% if rejected %}
+  <table>
+    <tr>
+      <th>Title</th><th>Company</th><th>Location</th>
+      <th>Why rejected</th><th>When</th>
+    </tr>
+    {% for r in rejected_rows %}
+    <tr>
+      <td><a href="/jobs/{{ r.job.id }}" style="color:var(--accent)">{{ r.job.title }}</a></td>
+      <td>{{ r.job.company }}</td>
+      <td class="muted">{{ r.job.location }}</td>
+      <td style="max-width:480px">{{ r.reason }}</td>
+      <td class="muted">{{ r.finished_at.strftime('%Y-%m-%d %H:%M') if r.finished_at else '' }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="5" class="muted">No rejected jobs yet — the agent's JD gate
+      (visa / sponsorship, experience level, STEM-OPT-only, security clearance,
+      stack mismatch) will land declined jobs here with the quoted reason.</td></tr>
+    {% endfor %}
+  </table>
+  <p class="muted" style="margin-top:10px">
+    Every row here was declined <strong>before anything was filled or submitted</strong>.
+    If you think the agent got a call wrong, tell it and the rule gets fixed.
+  </p>
+  {% else %}
   <table>
     <tr>
       <th>Title</th><th>Company</th><th>Location</th>
@@ -134,9 +117,12 @@
   <p class="muted" style="margin-top:10px">
     Match = how well your <strong>master resume</strong> fits this job (0–100, ranked by it).
     After tailoring = the same score once Phase 3 produces a tailored resume.
-    <strong>Agent apply</strong> = the agent reads the JD (rejects on US-citizens-only / no-sponsorship),
-    fills the form, answers the screening questions and submits — fully hands-off.
+    <strong>Agent apply</strong> = the agent reads the JD first (rejects on US-citizens-only /
+    no-sponsorship, experience far above your level, STEM-OPT-only, security clearance, or a
+    completely different stack — declined jobs land in <a href="/jobs?rejected=1" style="color:var(--accent)">Rejected</a> with the quoted reason),
+    then fills the form, answers the screening questions and submits — fully hands-off.
     Applied column = what happened to that job so far, with the resume that was used.
   </p>
+  {% endif %}
 </div>
 {% endblock %}

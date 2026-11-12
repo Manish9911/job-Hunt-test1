@@ -1,3 +1,5 @@
+from datetime import timezone
+
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
@@ -6,6 +8,7 @@ from .db.deps import get_db, get_profile
 from .db.models import (
     ActionLog,
     Application,
+    Lesson,
     CommonAnswer,
     Company,
     Education,
@@ -46,6 +49,7 @@ def index(
     )
     pid = profile.id
     counts = {
+        "lessons": db.query(Lesson).count(),
         "resumes": db.query(Resume).filter(Resume.profile_id == pid).count(),
         "skills": db.query(Skill).filter(Skill.profile_id == pid).count(),
         "work_history": db.query(WorkHistory).filter(WorkHistory.profile_id == pid).count(),
@@ -69,6 +73,8 @@ def index(
         .order_by(CommonAnswer.category, CommonAnswer.id).all()
     )
     companies = db.query(Company).order_by(Company.name).all()
+    lessons = db.query(Lesson).order_by(Lesson.updated_at.desc(),
+                                        Lesson.id.desc()).limit(200).all()
     by_region: dict[str, int] = {}
     by_ats: dict[str, int] = {}
     for c in companies:
@@ -80,7 +86,7 @@ def index(
             "overview",
             profile=profile, master=master, counts=counts, locations=locations,
             resumes=resumes, skills=skills, history=history, education=education,
-            answers=answers, companies=companies,
+            answers=answers, companies=companies, lessons=lessons,
             by_region=by_region, by_ats=by_ats,
         ),
     )
@@ -165,10 +171,61 @@ def companies_page(request: Request, db: Session = Depends(get_db)):
 def jobs_page(
     request: Request,
     all: bool = Query(False, description="show non-matching jobs too"),
+    rejected: bool = Query(False, description="show jobs the agent rejected (with reasons)"),
     db: Session = Depends(get_db),
 ):
     total = db.query(Job).count()
     passing = db.query(Job).filter(Job.passes_filters.is_(True)).count()
+
+    # Latest Application per job (one pass, ascending id -> last wins).
+    # Powers both the Applied column and the rejected-jobs view.
+    job_applications: dict[int, dict] = {}
+    latest_app: dict[int, Application] = {}
+    for a in db.query(Application).order_by(Application.id).all():
+        resume_name = None
+        if a.resume_id:
+            r = db.get(Resume, a.resume_id)
+            if r is not None:
+                resume_name = r.original_filename or f"resume #{a.resume_id}"
+        job_applications[a.job_id] = {
+            "status": a.status,
+            "resume": resume_name,
+            "notes": a.notes_json,
+            "finished_at": a.finished_at,
+        }
+        latest_app[a.job_id] = a
+
+    # Rejected-jobs view: jobs whose latest attempt was a JD-gate / clearance
+    # rejection, with the quoted reason — so the user can analyse whether the
+    # agent declined correctly.
+    _REJ_STATUSES = {"rejected_jd", "rejected_clearance"}
+    rejected_rows = []
+    for app in latest_app.values():
+        if app.status not in _REJ_STATUSES:
+            continue
+        job = db.get(Job, app.job_id)
+        if job is None:
+            continue
+        reason = _rejection_reason(job, app)
+        rejected_rows.append({
+            "job": job,
+            "status": app.status,
+            "reason": reason,
+            "finished_at": app.finished_at,
+        })
+    # finished_at values are a mix of naive (app-written) and tz-aware
+    # (batch-written) datetimes — comparing them directly raises TypeError.
+    # Normalize to UTC ISO strings (lexicographic == chronological in UTC).
+    def _ts(dt):
+        if dt is None:
+            return ""
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).isoformat()
+
+    rejected_rows.sort(key=lambda r: (_ts(r["finished_at"]), r["job"].id), reverse=True)
+    rejected_count = len(rejected_rows)
+
     query = db.query(Job)
     if not all:
         query = query.filter(Job.passes_filters.is_(True))
@@ -177,28 +234,6 @@ def jobs_page(
         .limit(200)
         .all()
     )
-    # Applied column: latest Application per job (status + resume used).
-    job_ids = [j.id for j in jobs]
-    job_applications: dict[int, dict] = {}
-    if job_ids:
-        apps = (
-            db.query(Application)
-            .filter(Application.job_id.in_(job_ids))
-            .order_by(Application.id)
-            .all()
-        )
-        for a in apps:  # ascending id -> last one wins = latest attempt
-            resume_name = None
-            if a.resume_id:
-                r = db.get(Resume, a.resume_id)
-                if r is not None:
-                    resume_name = r.original_filename or f"resume #{a.resume_id}"
-            job_applications[a.job_id] = {
-                "status": a.status,
-                "resume": resume_name,
-                "notes": a.notes_json,
-                "finished_at": a.finished_at,
-            }
     from .services.agent import get_agent
     agent = get_agent(request).status()
     return _render(
@@ -206,8 +241,55 @@ def jobs_page(
         **_ctx(
             "jobs", jobs=jobs, total=total, passing=passing, show_all=all,
             job_applications=job_applications, agent=agent,
+            rejected=rejected, rejected_rows=rejected_rows,
+            rejected_count=rejected_count,
         ),
     )
+
+
+def _rejection_reason(job: Job, app: Application) -> str:
+    """Human-readable reason for a rejected job.
+
+    Clearance rejections happen on the FORM (post-CTA scan) — the JD-gate
+    assessment for those jobs usually says "no exclusion criteria found" and
+    would mislead, so the application notes (quoted form question) win there.
+    """
+    import json as _json
+
+    if app.status == "rejected_clearance":
+        order = ("clearance:", app.notes_json, "jd:", job.jd_eligibility_json)
+    else:
+        order = ("jd:", job.jd_eligibility_json, "app:", app.notes_json)
+
+    for i in range(0, len(order), 2):
+        kind, src = order[i], order[i + 1]
+        if not src:
+            continue
+        try:
+            data = _json.loads(src)
+        except Exception:
+            continue
+        if not isinstance(data, dict):
+            continue
+        if kind == "clearance:":
+            quote = data.get("clearance")
+            if quote:
+                return f"security clearance required on the form: \"{quote}\""
+            continue
+        reasons = data.get("reasons") or []
+        if reasons:
+            # "label: \"quote\"" -> keep the quote, drop the label prefix
+            parts = []
+            for r in reasons[:3]:
+                r = str(r)
+                if ": \"" in r:
+                    r = r.split(": \"", 1)[1].rstrip("\"")
+                parts.append(r)
+            return " · ".join(parts)
+        if kind == "jd:" and data.get("decision") == "reject" and data.get("note"):
+            return str(data["note"])
+        # "no exclusion criteria found" / plain run notes are not reasons.
+    return app.error_text or app.status
 
 
 @router.get("/jobs/{job_id}", response_class=HTMLResponse)

@@ -1,6 +1,6 @@
 <p class="muted">Reusable answers for screening questions (work authorization, sponsorship, relocation, EEO, GDPR…). Phase 4 uses these to auto-fill ATS forms. Anything unanswerable here pauses the pipeline and asks you — it never guesses.</p>
 <div class="card">
-  <form hx-post="/api/common-answers" hx-swap="none" hx-on::after-request="if(event.detail.successfullySwapped) location.reload()">
+  <form data-json="/api/common-answers">
     <div style="display:grid;grid-template-columns:1fr 2fr;gap:0 16px">
       <div><label>Category</label><input name="category" placeholder="e.g. Work authorization"></div>
       <div><label>Question</label><input name="question" placeholder="e.g. Are you authorized to work in the US?" required></div>
@@ -17,7 +17,7 @@
       <td class="muted">{{ a.category }}</td>
       <td>{{ a.question }}</td>
       <td>{{ a.answer }}</td>
-      <td><button class="secondary" hx-delete="/api/common-answers/{{ a.id }}" hx-swap="none" hx-on::after-request="if(event.detail.successfullySwapped) location.reload()">delete</button></td>
+      <td><button class="secondary" hx-delete="/api/common-answers/{{ a.id }}" hx-swap="none" hx-on::after-request="if(event.detail.successful) location.reload()">delete</button></td>
     </tr>
     {% else %}
     <tr><td colspan="4" class="muted">No stored answers yet.</td></tr>

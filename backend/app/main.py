@@ -12,6 +12,7 @@ from .api import (
     common_answers,
     education,
     jobs,
+    lessons,
     profile,
     resumes,
     skills,
@@ -60,6 +61,7 @@ def create_app(database_url: str | None = None) -> FastAPI:
         jobs.router_public,
         tailor.router,
         applications.router,
+        lessons.router,
     ):
         app.include_router(router)
 
@@ -70,6 +72,7 @@ def create_app(database_url: str | None = None) -> FastAPI:
     from .services.agent import AutoApplyAgent
     agent_state = AutoApplyAgent()
     agent_state.session_factory = make_session(engine)
+    agent_state.data_dir = data_dir
     app.state.agent = agent_state
 
     @app.get("/health")

@@ -1,0 +1,56 @@
+<p class="muted">What the agent has learned. It re-reads these before every job —
+a board that keeps CAPTCHA-walling it gets skipped instead of re-battled, a
+domain you confirmed as legit never gets re-flagged, a confirmed scam is
+hard-rejected forever. Add your own tips (e.g. <code>company:acme</code> —
+"skip intern postings") and they apply to every future run.</p>
+<div class="card">
+  <form data-json="/api/lessons">
+    <div style="display:grid;grid-template-columns:1fr 1fr 2fr;gap:0 16px">
+      <div>
+        <label>Scope</label>
+        <input name="scope" list="lesson-scopes" placeholder="global" value="global">
+        <datalist id="lesson-scopes">
+          <option value="global"></option>
+          <option value="company:"></option>
+          <option value="domain:"></option>
+          <option value="ats:"></option>
+        </datalist>
+      </div>
+      <div>
+        <label>Type</label>
+        <select name="kind">
+          <option value="tip" selected>tip (guidance)</option>
+          <option value="pref">preference</option>
+          <option value="wall">board is CAPTCHA-walled (skip)</option>
+          <option value="fraud_ok">employer is legit</option>
+          <option value="fraud_bad">employer is a scam (reject)</option>
+        </select>
+      </div>
+      <div>
+        <label>Lesson</label>
+        <input name="text" placeholder="e.g. skip intern postings" required>
+      </div>
+    </div>
+    <p><button type="submit">Add lesson</button></p>
+  </form>
+</div>
+<div class="card">
+  <table>
+    <tr><th>Scope</th><th>Type</th><th>Lesson</th><th></th></tr>
+    {% for l in lessons %}
+    <tr>
+      <td class="muted">{{ l.scope }}</td>
+      <td>
+        {% if l.kind == 'wall' %}<span class="badge" style="background:rgba(255,180,80,.15);color:#ffb450">walled ×{{ l.count }}</span>
+        {% elif l.kind == 'fraud_ok' %}<span class="badge" style="background:rgba(46,160,67,.15);color:#2ea043">legit</span>
+        {% elif l.kind == 'fraud_bad' %}<span class="badge" style="background:rgba(255,120,120,.15);color:#ff8080">scam</span>
+        {% else %}<span class="badge">{{ l.kind }}</span>{% endif %}
+      </td>
+      <td>{{ l.text }}</td>
+      <td><button class="secondary" hx-delete="/api/lessons/{{ l.id }}" hx-swap="none" hx-on::after-request="if(event.detail.successful) location.reload()">delete</button></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4" class="muted">No lessons yet — the agent starts learning on its first runs (CAPTCHA walls, fraud confirmations, your tips).</td></tr>
+    {% endfor %}
+  </table>
+</div>

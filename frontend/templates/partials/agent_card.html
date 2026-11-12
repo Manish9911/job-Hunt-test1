@@ -1,0 +1,109 @@
+{# Agent card inner content — included by jobs.html AND returned by
+   GET /api/agent/status when called from HTMX (HX-Request header), so the
+   3s poll swaps in HTML (button + stats + feed) instead of raw JSON.
+
+   Also carries the safety/permission panel (2026-11-09, from the
+   job-apply-agent safety model): per-submission approval vs autonomous,
+   a SEPARATE outreach permission, and the fraud/never-pay-fees rules. #}
+{% set perm = perm | default({'mode': 'autonomous', 'outreach': false}) %}
+<h2>Auto-Apply Agent</h2>
+<div style="display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap">
+  {% if agent.running %}
+  <button class="secondary" hx-post="/api/agent/stop" hx-swap="none"
+          hx-on::after-request="location.reload()">⏹ Stop agent</button>
+  <span class="badge" style="background:#2ea043">RUNNING</span>
+  {% else %}
+  <form data-json="/api/agent/start" data-json-query-input="min_score"
+          style="display:flex;gap:8px;align-items:center">
+        <input type="number" name="min_score" min="0" max="100" value="0"
+               title="Minimum match score to apply to (0 = all matched jobs)"
+               style="width:110px">
+        <button type="submit">▶ Start agent</button>
+      </form>
+  <span class="badge">STOPPED</span>
+  {% endif %}
+  <div class="muted" style="flex:1;min-width:260px">
+    While running: the agent <strong>screens every job for fraud first</strong>
+    (fee demands or suspect application links are dropped or held for you),
+    <strong>tailors your resume to the JD</strong>, reads the requirements — if the
+    JD says <strong>US citizens only</strong> or <strong>no sponsorship</strong> it rejects the
+    application without touching the form — otherwise it fills it, answers the
+    screening questions and submits <em>if you've allowed autonomous mode below</em>.
+    Forms that demand payment are aborted (the agent <strong>never pays a fee</strong>);
+    CAPTCHA-gated forms are logged as blocked and need you once.
+    The number box sets the minimum match score (0 = apply to every matched job).
+  </div>
+</div>
+
+{# ---- Safety & permission panel ---- #}
+<div style="margin-top:12px;padding:10px 14px;border:1px solid #30363d;border-radius:8px">
+  <strong>Safety &amp; permissions</strong>
+  <div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:6px">
+    <label title="The agent fills each form and STOPS — approve or reject it from the Applications page before anything is submitted">
+      <input type="radio" name="perm-mode" value="approve_each"
+             {% if perm.mode == 'approve_each' %}checked{% endif %}>
+      Ask me before each submission
+    </label>
+    <label title="The agent submits applications on its own, 24/7 — the original mode">
+      <input type="radio" name="perm-mode" value="autonomous"
+             {% if perm.mode != 'approve_each' %}checked{% endif %}>
+      Submit automatically (autonomous)
+    </label>
+    <label title="Separate gate: allows the agent to send recruiter emails. It is NEVER implied by application permission — and outreach is only used if you turn this on">
+      <input type="checkbox" id="perm-outreach"
+             {% if perm.outreach %}checked{% endif %}>
+      Allow email outreach (separate permission)
+    </label>
+  </div>
+  <div class="muted" style="margin-top:4px">
+    Always on, not togglable: fraud screen before any data is shared ·
+    never pays a fee · clearance jobs rejected · CAPTCHA never auto-solved.
+    <span id="perm-saved" style="display:none;font-weight:bold">saved ✓</span>
+  </div>
+</div>
+<script>
+(function () {
+  function savePerms() {
+    var modeEl = document.querySelector('input[name="perm-mode"]:checked');
+    var outEl = document.getElementById('perm-outreach');
+    fetch('/api/profile/permissions', {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        submission_mode: modeEl ? modeEl.value : 'autonomous',
+        outreach_permitted: !!(outEl && outEl.checked)
+      })
+    }).then(function (r) {
+      if (!r.ok) { console.error('permissions save failed', r.status); return; }
+      var el = document.getElementById('perm-saved');
+      if (el) { el.style.display = 'inline'; setTimeout(function () { el.style.display = 'none'; }, 1500); }
+    }).catch(function () { alert('Could not save permissions'); });
+  }
+  document.querySelectorAll('input[name="perm-mode"]').forEach(function (r) {
+    r.addEventListener('change', savePerms);
+  });
+  var out = document.getElementById('perm-outreach');
+  if (out) out.addEventListener('change', savePerms);
+})();
+</script>
+
+<div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:10px">
+  <span class="muted">submitted: <strong>{{ agent.stats.submitted }}</strong></span>
+  <span class="muted">needs review: <strong>{{ agent.stats.review }}</strong></span>
+  <span class="muted">blocked: <strong>{{ agent.stats.blocked }}</strong></span>
+  <span class="muted">rejected by JD/fraud gate: <strong>{{ agent.stats.rejected }}</strong></span>
+  <span class="muted">failed: <strong>{{ agent.stats.failed }}</strong></span>
+  <span class="muted">lessons learned: <strong>{{ agent.lessons | default(0) }}</strong></span>
+</div>
+{% if agent.last_activity %}
+<p class="muted" style="margin-top:8px">Last: {{ agent.last_activity }}</p>
+{% endif %}
+{% if agent.events %}
+<details style="margin-top:8px"><summary>Activity feed</summary>
+  <ul>
+    {% for ev in agent.events %}
+    <li class="muted">{{ ev.time }} · <strong>{{ ev.kind }}</strong>{% if ev.job %} · {{ ev.job }}{% endif %} — {{ ev.text }}</li>
+    {% endfor %}
+  </ul>
+</details>
+{% endif %}

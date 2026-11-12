@@ -14,6 +14,32 @@ class ProfileIn(BaseModel):
     # list in JSON bodies, comma-separated string from forms
     locations: list[str] | str = ""
     min_salary: str | None = None
+    # linkedin / portfolio are edited in the dedicated Overview "Links &
+    # location" card (PATCH /api/profile/links) — kept here for API compat.
+    linkedin: str | None = None
+    portfolio: str | None = None
+
+
+class ProfileLinksIn(BaseModel):
+    """Dedicated Overview column (user rule 2026-11-04): LinkedIn,
+    Portfolio/GitHub and the current location — the values the agent always
+    fills into ATS forms. Kept together in one card so the user updates them
+    in one obvious place."""
+    linkedin: str | None = None
+    portfolio: str | None = None
+    location: str | None = None
+
+
+class ProfilePermissionsIn(BaseModel):
+    """Dedicated agent-permission card (2026-11-09). Kept apart from the main
+    profile PUT for the same reason as ProfileLinksIn: saving the main form
+    must never clobber the permission settings — and these must never clobber
+    the profile.``submission_mode``: 'autonomous' (agent auto-submits) or
+    'approve_each' (agent stages each application, user approves or rejects
+    it first). ``outreach_permitted``: separate gate for cold-email outreach —
+    an application grant never implies email permission."""
+    submission_mode: str = "autonomous"
+    outreach_permitted: bool = False
 
 
 class SkillIn(BaseModel):
