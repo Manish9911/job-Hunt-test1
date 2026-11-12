@@ -217,6 +217,10 @@ class Job(Base):
     salary_currency: Mapped[str] = mapped_column(String(10), default="USD")
     apply_url: Mapped[str] = mapped_column(String(1000), default="")
     source: Mapped[str] = mapped_column(String(60), default="")  # hiringcafe|greenhouse|lever|...
+    # Source-agnostic dedupe key: sha1(slug(company)|slug(title)|slug(state)).
+    # Catches the same posting re-surfacing from a different board/URL (e.g.
+    # hiring.cafe + the company's own ATS feed). Empty when title/company missing.
+    norm_key: Mapped[str] = mapped_column(String(120), default="", index=True)
     hiringcafe_id: Mapped[str] = mapped_column(String(120), default="")
     indexed_at: Mapped[str | None] = mapped_column(String(60), nullable=True)
     # Filtering result at ingest time (informational; re-evaluable anytime)

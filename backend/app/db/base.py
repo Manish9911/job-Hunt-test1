@@ -43,6 +43,7 @@ _EXTRA_COLUMNS = (
     ("jobs", "cover_letter_text", "TEXT DEFAULT ''"),
     ("jobs", "jd_eligibility_json", "TEXT DEFAULT '{}'"),
     ("jobs", "fraud_screen_json", "TEXT DEFAULT '{}'"),
+    ("jobs", "norm_key", "VARCHAR(120) DEFAULT ''"),
     ("profiles", "linkedin", "VARCHAR(500)"),
     ("profiles", "portfolio", "VARCHAR(500)"),
     ("profiles", "submission_mode", "VARCHAR(20) DEFAULT 'autonomous'"),
